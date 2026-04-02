@@ -24,7 +24,7 @@ const LogSchema = new mongoose.Schema({
     bdTime: String,
     createdAt: { type: Date, default: Date.now }
 });
-const MotorLog = mongoose.model('MotorLog4', LogSchema);
+const MotorLog = mongoose.model('MotorLog46', LogSchema);
 
 // --- Static Files ---
 // Serve files from the sibling 'Dashboard' directory
