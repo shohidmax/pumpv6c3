@@ -1,5 +1,5 @@
 // =================================================================
-// ESP32 Simple WebSocket Client - Fixed & Optimized (Always Connected)
+// ESP32 Simple WebSocket Client - Fixed & Optimized (Always Connected) .....................................
 // =================================================================
 
 #include <WiFi.h>
@@ -11,17 +11,36 @@
 #include <esp_task_wdt.h>
 #include <nvs_flash.h>
 
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#ifndef WHITE
+#define WHITE SSD1306_WHITE
+#endif
+#ifndef BLACK
+#define BLACK SSD1306_BLACK
+#endif
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET -1
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+bool displayFound = false;
+unsigned long lastDisplayUpdate = 0;
+const unsigned long displayUpdateInterval = 1000;
+bool displayBlink = false;
 
 // --- Configuration ---
-const char* websocket_server_host = "rajuv32.espserver.site";
+const char* websocket_server_host = "mypumpv8.onrender.com";
 const uint16_t websocket_server_port = 443;
 #define WDT_TIMEOUT 30 // 30 Seconds Watchdog
 
 // Updated URLs from your latest code
-const char* firmwareUrl = "https://github.com/shohidmax/raju_Pump3.2/releases/download/rajuv2/Pump_Online2.ino.bin";
-const char* versionUrl = "https://raw.githubusercontent.com/shohidmax/raju_Pump3.2/refs/heads/main/Server/version.txt";
+const char* firmwareUrl = "https://github.com/shohidmax/pumpv6c3/releases/download/c6v3/v3.ino.bin";
+const char* versionUrl = "https://raw.githubusercontent.com/shohidmax/pumpv6c3/refs/heads/main/Server/version.txt";
 // Current firmware version
-const char* currentFirmwareVersion = "1.1.3";
+const char* currentFirmwareVersion = "1.1.9";
 
 // Timers
 unsigned long lastUpdateCheck = 0;
@@ -31,23 +50,26 @@ unsigned long lastWifiCheck = 0;
 const unsigned long wifiCheckInterval = 10000; // Check WiFi every 10 seconds
 
 // --- PIN DEFINITIONS ---
-#define RELAY_1 12
-#define RELAY_2 14
-#define relay_3 13
+#define RELAY_1 25
+#define RELAY_2 26
+#define BUZZER_PIN 13 // Previously relay_3
 #define SWITCH_1 23
-#define SWITCH_2 22
+#define SWITCH_2 19 // Moved from 22 to 19 to fix I2C (SDA/SCL) pin conflict
 
 // --- GLOBAL VARIABLES ---
 WebSocketsClient webSocket;
 unsigned long relay1_timer = 0;
 unsigned long relay2_timer = 0;
-unsigned long relay3_timer = 0;
+unsigned long buzzer_timer = 0;
 const int relay_duration = 1000; // 1 Second Pulse
+const int buzzer_duration = 200; // 200ms Beep
 
+String deviceLastAction = "System Boot";
 unsigned long lastStatusUpdate = 0;
 String lastMotorStat = "";
 String lastSysMode = "";
 int lastWifiSignal = 0;
+bool isServerConnected = false;
 
 // --- FORWARD DECLARATIONS ---
 void checkForFirmwareUpdate();
@@ -56,6 +78,10 @@ void downloadAndApplyFirmware();
 bool startOTAUpdate(WiFiClient* client, int contentLength);
 
 // --- FUNCTIONS ---
+void beep() {
+    digitalWrite(BUZZER_PIN, HIGH);
+    buzzer_timer = millis();
+}
 
 // Debounce Variables
 unsigned long lastDebounceTime = 0;
@@ -87,6 +113,7 @@ void sendStatus() {
     if (reading != stableMotorState) {
        if ((millis() - lastDebounceTime) > debounceDelay) {
          stableMotorState = reading; // Update stable state
+         deviceLastAction = (stableMotorState == "ON") ? "Motor ON (Switch)" : "Motor OFF (Switch)";
          lastDebounceTime = millis();
        }
     } else {
@@ -108,7 +135,9 @@ void sendStatus() {
         payload["systemMode"] = currentMode;
         payload["wifiSignal"] = currentSignal;
         payload["localIP"] = WiFi.localIP().toString();
+        payload["wifiSSID"] = WiFi.SSID();
         payload["version"] = currentFirmwareVersion;
+        payload["lastAction"] = deviceLastAction;
         
         String jsonString;
         serializeJson(doc, jsonString);
@@ -126,9 +155,11 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
     switch(type) {
         case WStype_DISCONNECTED:
             Serial.println("[WSc] Disconnected!");
+            isServerConnected = false;
             break;
         case WStype_CONNECTED:
             Serial.println("[WSc] Connected!");
+            isServerConnected = true;
             webSocket.sendTXT("{\"type\":\"esp32-identify\"}");
             break;
         case WStype_TEXT: {
@@ -136,15 +167,22 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
             DeserializationError error = deserializeJson(doc, payload);
             if (!error) {
                 String command = doc["command"];
-                if (command == "RELAY_1") {
+                if (command == "RELAY_1" || command == "RELAY_1_AUTO" || command == "RELAY_1_ALWAYS") {
                     digitalWrite(RELAY_1, HIGH);
                     relay1_timer = millis();
-                } else if (command == "RELAY_2") {
+                    beep();
+                    if (command == "RELAY_1_AUTO") deviceLastAction = "Motor ON (Auto)";
+                    else if (command == "RELAY_1_ALWAYS") deviceLastAction = "Motor ON (Always Mode)";
+                    else deviceLastAction = "Motor ON (Remote)";
+                } else if (command == "RELAY_2" || command == "RELAY_2_AUTO") {
                     digitalWrite(RELAY_2, HIGH);
                     relay2_timer = millis();
+                    beep();
+                    if (command == "RELAY_2_AUTO") deviceLastAction = "Motor OFF (Auto)";
+                    else deviceLastAction = "Motor OFF (Remote)";
                 } else if (command == "RESET") {
-                    digitalWrite(relay_3, HIGH);
-                    relay3_timer = millis();
+                    beep();
+                    deviceLastAction = "System Reset";
                 } else if (command == "RESTART_ESP") {
                     webSocket.disconnect();
                     delay(500);
@@ -178,16 +216,42 @@ void configModeCallback(WiFiManager *myWiFiManager) {
   Serial.println(WiFi.softAPIP());
   // Start blinking LED every 0.3 seconds
   blinker.attach(0.3, tick);
+
+  if (displayFound) {
+      display.clearDisplay();
+      display.setTextColor(WHITE);
+      display.setTextSize(1);
+      display.setCursor(20, 0);
+      display.println("WiFi Setup Mode");
+      display.drawLine(0, 10, 128, 10, WHITE);
+      display.setCursor(0, 20);
+      display.println("Connect to WiFi:");
+      display.setCursor(0, 35);
+      display.setTextSize(2);
+      display.print("Mutho-Sech");
+      display.setTextSize(1);
+      display.setCursor(0, 55);
+      display.print("192.168.4.1");
+      display.display();
+  }
 }
 
 void setup() {
     Serial.begin(115200);
     delay(1000); // Wait for Serial
     
+    Wire.begin(22, 21); // SDA = 22, SCL = 21
+    if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { 
+      Serial.println(F("SSD1306 allocation failed. Operating without display."));
+      displayFound = false;
+    } else {
+      displayFound = true;
+    }
+    
     // Initialize Pins
     pinMode(RELAY_1, OUTPUT); digitalWrite(RELAY_1, LOW);
     pinMode(RELAY_2, OUTPUT); digitalWrite(RELAY_2, LOW);
-    pinMode(relay_3, OUTPUT); digitalWrite(relay_3, LOW);
+    pinMode(BUZZER_PIN, OUTPUT); digitalWrite(BUZZER_PIN, LOW);
     pinMode(SWITCH_1, INPUT_PULLUP);
     pinMode(SWITCH_2, INPUT_PULLUP);
     
@@ -223,6 +287,16 @@ void setup() {
     wm.setAPCallback(configModeCallback); // Set Blink Callback
     wm.setConfigPortalTimeout(180); // 3 Minutes timeout
 
+    if (displayFound) {
+      display.clearDisplay();
+      display.setTextSize(1);
+      display.setCursor(0, 25);
+      display.println("Attempting Connection");
+      display.setCursor(0, 40);
+      display.println("Wait...");
+      display.display();
+    }
+
     // --- STANDARD NVS INIT END ---
 
     if (!wm.autoConnect("Mutho-Sech")) {
@@ -234,6 +308,7 @@ void setup() {
     // Connected!
     blinker.detach(); // Stop blinking
     digitalWrite(LED_PIN, HIGH); // Turn LED ON (Solid)
+    beep(); // Confirm connection with beep
 
     Serial.println("WiFi Connected!");
     Serial.println("Current Version: " + String(currentFirmwareVersion));
@@ -275,12 +350,82 @@ void loop() {
     if (relay2_timer > 0 && currentMillis - relay2_timer >= relay_duration) {
         digitalWrite(RELAY_2, LOW); relay2_timer = 0;
     }
-    if (relay3_timer > 0 && currentMillis - relay3_timer >= relay_duration) {
-        digitalWrite(relay_3, LOW); relay3_timer = 0;
+    if (buzzer_timer > 0 && currentMillis - buzzer_timer >= buzzer_duration) {
+        digitalWrite(BUZZER_PIN, LOW); buzzer_timer = 0;
     }
 
     // Check Status and Send Update
     sendStatus();
+    
+    // Update the OLED Screen
+    updateDisplay();
+}
+
+void updateDisplay() {
+    if (!displayFound) return;
+    if ((millis() - lastDisplayUpdate) < displayUpdateInterval) return;
+    lastDisplayUpdate = millis();
+    displayBlink = !displayBlink;
+
+    display.clearDisplay();
+    display.setTextColor(WHITE);
+
+    // Header: WiFi & Signal
+    display.setTextSize(1);
+    display.setCursor(0, 0);
+    if (WiFi.status() == WL_CONNECTED) {
+        int sig = constrain(map(WiFi.RSSI(), -100, -30, 0, 100), 0, 100);
+        display.print("W:"); display.print(sig); display.print("% ");
+        // Show just the last octet of IP if it's too long
+        display.print("IP:..."); display.print(WiFi.localIP()[3]); 
+    } else {
+        display.print("WiFi: ---");
+    }
+    
+    // Blinking Activity Dot
+    display.setCursor(120, 0);
+    if (displayBlink) display.print("*");
+    
+    display.drawLine(0, 10, 128, 10, WHITE);
+    
+    // Row 2: Server Status
+    display.setCursor(0, 14);
+    if (isServerConnected) {
+        display.print("Server: Connected");
+    } else {
+        display.print("Server: Offline");
+    }
+    
+    // Body: Motor Status
+    display.setCursor(0, 26);
+    display.setTextSize(1);
+    display.print("MTR:");
+    
+    display.setTextSize(2);
+    display.setCursor(40, 24);
+    if (stableMotorState == "ON") {
+        display.fillRect(38, 22, 34, 18, WHITE);
+        display.setTextColor(BLACK, WHITE);
+        display.print("ON");
+        display.setTextColor(WHITE, BLACK);
+    } else {
+        display.print("OFF");
+    }
+
+    // Body: System Mode
+    display.setTextSize(1);
+    display.setCursor(0, 44);
+    String modeToPrint = (digitalRead(SWITCH_2) == LOW) ? "Normal" : "Emergency";
+    display.print("Mode: ");
+    display.print(modeToPrint);
+    
+    display.drawLine(0, 53, 128, 53, WHITE);
+
+    // Footer: Last Action (Truncated to fit screen)
+    display.setCursor(0, 56);
+    display.print(deviceLastAction.substring(0, 21)); 
+
+    display.display();
 }
 
 bool isNewerVersion(String current, String latest) {
