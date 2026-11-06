@@ -10,6 +10,30 @@
 #include <Update.h>
 #include <esp_task_wdt.h>
 #include <nvs_flash.h>
+#include <Preferences.h>
+
+// --- SIM800L GSM CONFIGURATION ---
+#define SIM800_RX_PIN 16 // ESP32 D16 (RX2) -> SIM800L TXD
+#define SIM800_TX_PIN 17 // ESP32 D17 (TX2) -> SIM800L RXD
+#define SIM800_BAUD 9600
+
+Preferences prefs;
+String adminPhoneNumber = "";
+
+String simBuffer = "";
+bool inCall = false;
+unsigned long callStartTime = 0;
+const unsigned long maxCallDuration = 45000; // 45 seconds auto-hangup
+bool isNextLineSMSBody = false;
+String smsSenderNumber = "";
+
+void initSIM800();
+void handleSIM800();
+void processSIMLine(String line);
+void handleIncomingSMS(String sender, String text);
+void sendSMS(String number, String message);
+void saveAdminPhone(String newPhone);
+bool isAuthorizedNumber(String incomingNum);
 
 #include <Wire.h>
 #include <Adafruit_GFX.h>
@@ -32,7 +56,7 @@ const unsigned long displayUpdateInterval = 1000;
 bool displayBlink = false;
 
 // --- Configuration ---
-const char* websocket_server_host = "mypumpv8.onrender.com";
+const char* websocket_server_host = "pvrv3.maxapi.esp32.site";
 const uint16_t websocket_server_port = 443;
 #define WDT_TIMEOUT 30 // 30 Seconds Watchdog
 
@@ -161,6 +185,9 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
             Serial.println("[WSc] Connected!");
             isServerConnected = true;
             webSocket.sendTXT("{\"type\":\"esp32-identify\"}");
+            if (adminPhoneNumber.length() > 0) {
+                webSocket.sendTXT("{\"type\":\"phoneUpdate\",\"phone\":\"" + adminPhoneNumber + "\"}");
+            }
             break;
         case WStype_TEXT: {
             JsonDocument doc;
@@ -189,6 +216,15 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
                     ESP.restart();
                 } else if (command == "CHECK_UPDATE") {
                     checkForFirmwareUpdate();
+                } else if (command == "SET_PHONE") {
+                    String newPhone = doc["value"] | "";
+                    if (newPhone.length() > 0) {
+                        saveAdminPhone(newPhone);
+                    }
+                } else if (command == "GET_PHONE") {
+                    if (adminPhoneNumber.length() > 0) {
+                        webSocket.sendTXT("{\"type\":\"phoneUpdate\",\"phone\":\"" + adminPhoneNumber + "\"}");
+                    }
                 }
                 // Send immediate update after command
                 lastStatusUpdate = 0; // Force update
@@ -203,6 +239,223 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
 // LED Definition
 #define LED_PIN 2
 Ticker blinker;
+
+// --- SIM800L HELPER FUNCTIONS ---
+
+void saveAdminPhone(String newPhone) {
+    adminPhoneNumber = newPhone;
+    adminPhoneNumber.trim();
+    prefs.begin("sim_cfg", false);
+    prefs.putString("admin_phone", adminPhoneNumber);
+    prefs.end();
+    Serial.println("[NVS] Saved Admin Phone: " + adminPhoneNumber);
+}
+
+bool isAuthorizedNumber(String incomingNum) {
+    if (adminPhoneNumber.length() == 0) {
+        return false;
+    }
+    String cleanAdmin = "";
+    for (size_t i = 0; i < adminPhoneNumber.length(); i++) {
+        if (isDigit(adminPhoneNumber[i])) cleanAdmin += adminPhoneNumber[i];
+    }
+    String cleanIncoming = "";
+    for (size_t i = 0; i < incomingNum.length(); i++) {
+        if (isDigit(incomingNum[i])) cleanIncoming += incomingNum[i];
+    }
+    if (cleanAdmin.length() >= 10 && cleanIncoming.length() >= 10) {
+        String adminSuffix = cleanAdmin.substring(cleanAdmin.length() - 10);
+        String incomingSuffix = cleanIncoming.substring(cleanIncoming.length() - 10);
+        return (adminSuffix == incomingSuffix);
+    }
+    return cleanAdmin.equals(cleanIncoming);
+}
+
+void sendSMS(String number, String message) {
+    if (number.length() == 0) return;
+    Serial.println("[SIM800L] Sending SMS to " + number + ": " + message);
+    Serial2.println("AT+CMGF=1");
+    delay(100);
+    Serial2.print("AT+CMGS=\"");
+    Serial2.print(number);
+    Serial2.println("\"");
+    delay(200);
+    Serial2.print(message);
+    delay(100);
+    Serial2.write(26); // ASCII 26 (Ctrl+Z) to send
+    delay(300);
+}
+
+void initSIM800() {
+    Serial.println("[SIM800L] Initializing Serial2 on RX=16, TX=17 at 9600 baud...");
+    Serial2.begin(SIM800_BAUD, SERIAL_8N1, SIM800_RX_PIN, SIM800_TX_PIN);
+    delay(500);
+    Serial2.println("AT");
+    delay(150);
+    Serial2.println("ATE0"); // Disable echo
+    delay(150);
+    Serial2.println("AT+CMGF=1"); // SMS Text mode
+    delay(150);
+    Serial2.println("AT+CNMI=1,2,0,0,0"); // Direct SMS output to serial
+    delay(150);
+    Serial2.println("AT+CLIP=1"); // Enable Caller ID
+    delay(150);
+    Serial2.println("AT+DDET=1"); // Enable DTMF tone detection
+    delay(150);
+    Serial.println("[SIM800L] Module Ready.");
+}
+
+void handleIncomingSMS(String sender, String text) {
+    Serial.println("[SIM800L] SMS from [" + sender + "]: " + text);
+
+    // Command to set authorized number via SMS (e.g. SET:01712345678)
+    if (text.startsWith("SETNUM:") || text.startsWith("SET:")) {
+        int colon = text.indexOf(':');
+        String newPhone = text.substring(colon + 1);
+        newPhone.trim();
+        if (newPhone.length() >= 10) {
+            saveAdminPhone(newPhone);
+            sendSMS(sender, "Authorized number set to: " + newPhone);
+            if (webSocket.isConnected()) {
+                webSocket.sendTXT("{\"type\":\"phoneUpdate\",\"phone\":\"" + newPhone + "\"}");
+            }
+        } else {
+            sendSMS(sender, "Invalid number. Format: SET:01xxxxxxxxx");
+        }
+        return;
+    }
+
+    // Verify authorized sender for control commands
+    if (!isAuthorizedNumber(sender)) {
+        Serial.println("[SIM800L] Ignored SMS from unauthorized sender: " + sender);
+        return;
+    }
+
+    if (text == "ON" || text.indexOf("MOTOR ON") != -1) {
+        Serial.println("[SIM800L] SMS Triggered: Motor ON");
+        digitalWrite(RELAY_1, HIGH);
+        relay1_timer = millis();
+        beep();
+        deviceLastAction = "Motor ON (SMS)";
+        lastStatusUpdate = 0;
+        sendSMS(sender, "Motor has been turned ON.");
+    } else if (text == "OFF" || text.indexOf("MOTOR OFF") != -1) {
+        Serial.println("[SIM800L] SMS Triggered: Motor OFF");
+        digitalWrite(RELAY_2, HIGH);
+        relay2_timer = millis();
+        beep();
+        deviceLastAction = "Motor OFF (SMS)";
+        lastStatusUpdate = 0;
+        sendSMS(sender, "Motor has been turned OFF.");
+    } else if (text == "STATUS" || text.indexOf("STATUS") != -1) {
+        String currentMode = (digitalRead(SWITCH_2) == LOW) ? "Normal" : "Emergency";
+        String statusMsg = "Motor: " + stableMotorState + "\nMode: " + currentMode + "\nWiFi: " + (WiFi.status() == WL_CONNECTED ? "Connected" : "Offline");
+        sendSMS(sender, statusMsg);
+    }
+}
+
+void processSIMLine(String line) {
+    line.trim();
+    if (line.length() == 0) return;
+    Serial.println("[SIM800L] " + line);
+
+    // 1. Incoming Call (+CLIP)
+    if (line.startsWith("+CLIP:")) {
+        int firstQuote = line.indexOf('"');
+        int secondQuote = line.indexOf('"', firstQuote + 1);
+        if (firstQuote != -1 && secondQuote != -1) {
+            String callerNumber = line.substring(firstQuote + 1, secondQuote);
+            Serial.println("[SIM800L] Incoming Call from: " + callerNumber);
+
+            if (isAuthorizedNumber(callerNumber)) {
+                Serial.println("[SIM800L] Authorized Caller! Answering call...");
+                delay(800);
+                Serial2.println("ATA"); // Answer call
+                delay(300);
+                Serial2.println("AT+DDET=1"); // Enable DTMF detection
+                inCall = true;
+                callStartTime = millis();
+            } else {
+                Serial.println("[SIM800L] Unauthorized Caller. Rejecting...");
+                Serial2.println("ATH"); // Reject call
+            }
+        }
+    }
+    // 2. DTMF Tone Detection (+DTMF: 1 or +DTMF: 2)
+    else if (line.startsWith("+DTMF:")) {
+        int colon = line.indexOf(':');
+        if (colon != -1) {
+            String keyStr = line.substring(colon + 1);
+            keyStr.trim();
+            if (keyStr.length() > 0) {
+                char key = keyStr.charAt(0);
+                Serial.println("[SIM800L] DTMF Received: " + String(key));
+
+                if (key == '1') {
+                    Serial.println("[SIM800L] DTMF 1: Turning Motor ON");
+                    digitalWrite(RELAY_1, HIGH);
+                    relay1_timer = millis();
+                    beep();
+                    deviceLastAction = "Motor ON (Call/DTMF)";
+                    lastStatusUpdate = 0;
+                } else if (key == '2') {
+                    Serial.println("[SIM800L] DTMF 2: Turning Motor OFF");
+                    digitalWrite(RELAY_2, HIGH);
+                    relay2_timer = millis();
+                    beep();
+                    deviceLastAction = "Motor OFF (Call/DTMF)";
+                    lastStatusUpdate = 0;
+                }
+            }
+        }
+    }
+    // 3. Call Ended
+    else if (line.indexOf("NO CARRIER") != -1 || line.indexOf("BUSY") != -1 || line.indexOf("DISCONNECT") != -1) {
+        Serial.println("[SIM800L] Call ended.");
+        inCall = false;
+    }
+    // 4. Incoming SMS (+CMT)
+    else if (line.startsWith("+CMT:")) {
+        int firstQuote = line.indexOf('"');
+        int secondQuote = line.indexOf('"', firstQuote + 1);
+        if (firstQuote != -1 && secondQuote != -1) {
+            smsSenderNumber = line.substring(firstQuote + 1, secondQuote);
+            isNextLineSMSBody = true;
+        }
+    }
+    // 5. SMS Body Line
+    else if (isNextLineSMSBody) {
+        isNextLineSMSBody = false;
+        String body = line;
+        body.trim();
+        body.toUpperCase();
+        handleIncomingSMS(smsSenderNumber, body);
+    }
+}
+
+void handleSIM800() {
+    // Safety auto-hangup if call exceeds maxCallDuration
+    if (inCall && (millis() - callStartTime > maxCallDuration)) {
+        Serial.println("[SIM800L] Call limit reached. Hanging up...");
+        Serial2.println("ATH");
+        inCall = false;
+    }
+
+    // Read Serial2 incoming characters
+    while (Serial2.available()) {
+        char c = (char)Serial2.read();
+        if (c == '\r') continue;
+        if (c == '\n') {
+            if (simBuffer.length() > 0) {
+                processSIMLine(simBuffer);
+                simBuffer = "";
+            }
+        } else {
+            simBuffer += c;
+            if (simBuffer.length() > 250) simBuffer = "";
+        }
+    }
+}
 
 void tick() {
   // Toggle LED state
@@ -257,6 +510,13 @@ void setup() {
     
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, LOW); // Start LOW
+
+    // Initialize SIM800L and Load Stored Admin Phone
+    prefs.begin("sim_cfg", true);
+    adminPhoneNumber = prefs.getString("admin_phone", "");
+    prefs.end();
+    Serial.println("[NVS] Stored Admin Phone: " + adminPhoneNumber);
+    initSIM800();
 
     // Watchdog Setup
     esp_task_wdt_deinit();
@@ -330,6 +590,7 @@ void setup() {
 void loop() {
     esp_task_wdt_reset(); // Keep device alive
     webSocket.loop();
+    handleSIM800(); // SIM800L Non-blocking Call, SMS & DTMF handler
 
     // FIXED: Smart Reconnect Logic
     // এটি প্রতি ১০ সেকেন্ডে চেক করবে কানেকশন আছে কিনা। না থাকলে রিকানেক্ট করবে।

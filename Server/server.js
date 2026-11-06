@@ -39,14 +39,19 @@ const ScheduleSchema = new mongoose.Schema({
 const MotorSchedule = mongoose.model('MotorSchedule8c', ScheduleSchema);
 
 const SettingsSchema = new mongoose.Schema({
-    isAlwaysOn: { type: Boolean, default: false }
+    isAlwaysOn: { type: Boolean, default: false },
+    adminPhone: { type: String, default: "" }
 });
 const SystemSettings = mongoose.model('SystemSettings8c', SettingsSchema);
 
 let globalAlwaysOn = false;
+let globalAdminPhone = "";
 SystemSettings.findOne().then(doc => {
     if(!doc) { new SystemSettings().save(); }
-    else { globalAlwaysOn = doc.isAlwaysOn; }
+    else {
+        globalAlwaysOn = doc.isAlwaysOn;
+        globalAdminPhone = doc.adminPhone || "";
+    }
 }).catch(console.error);
 
 // --- Static Files ---
@@ -119,6 +124,11 @@ wss.on('connection', (ws) => {
                 ws.send('{"command":"RELAY_1_ALWAYS"}');
             }
 
+            // Sync Admin Phone with ESP32
+            if (globalAdminPhone) {
+                ws.send(JSON.stringify({ command: 'SET_PHONE', value: globalAdminPhone }));
+            }
+
         } else if (data.type === 'web-identify' && !ws.isIdentified) {
             clearTimeout(identificationTimeout);
             console.log('Web client identified explicitly.');
@@ -127,7 +137,7 @@ wss.on('connection', (ws) => {
             const espStatus = (esp32Client && esp32Client.readyState === WebSocket.OPEN) ? 'online' : 'offline';
             ws.send(JSON.stringify({ type: 'espStatus', status: espStatus }));
             
-            // Send known motor status
+            // Send known motor status and admin phone
             ws.send(JSON.stringify({
                 type: 'statusUpdate',
                 payload: {
@@ -136,6 +146,7 @@ wss.on('connection', (ws) => {
                    systemMode: "Normal"
                 }
             }));
+            ws.send(JSON.stringify({ type: 'phoneUpdate', payload: globalAdminPhone }));
             
 
         } else if (data.type === 'command' && ws !== esp32Client) {
@@ -265,6 +276,20 @@ wss.on('connection', (ws) => {
                 }
             } else if (data.command === 'GET_ALWAYS_ON') {
                 ws.send(JSON.stringify({ type: 'alwaysOnUpdate', payload: globalAlwaysOn }));
+            } else if (data.command === 'GET_PHONE') {
+                ws.send(JSON.stringify({ type: 'phoneUpdate', payload: globalAdminPhone }));
+            } else if (data.command === 'SET_PHONE') {
+                globalAdminPhone = String(data.value || "").trim();
+                console.log("Admin phone updated to:", globalAdminPhone);
+                SystemSettings.findOneAndUpdate({}, { adminPhone: globalAdminPhone }, { upsert: true }).catch(console.error);
+                if (esp32Client && esp32Client.readyState === WebSocket.OPEN) {
+                    esp32Client.send(JSON.stringify({ command: 'SET_PHONE', value: globalAdminPhone }));
+                }
+                webClients.forEach(c => {
+                    if (c.readyState === WebSocket.OPEN) {
+                        c.send(JSON.stringify({ type: 'phoneUpdate', payload: globalAdminPhone }));
+                    }
+                });
             } else {
                  // Forward other commands (RELAY, RESET, RESTART) to ESP32
                 if (esp32Client && esp32Client.readyState === WebSocket.OPEN) {
@@ -273,6 +298,15 @@ wss.on('connection', (ws) => {
                 }
             }
 
+        } else if (data.type === 'phoneUpdate' && ws === esp32Client) {
+            globalAdminPhone = String(data.phone || "").trim();
+            console.log("Phone update received from ESP32:", globalAdminPhone);
+            SystemSettings.findOneAndUpdate({}, { adminPhone: globalAdminPhone }, { upsert: true }).catch(console.error);
+            webClients.forEach(c => {
+                if (c.readyState === WebSocket.OPEN) {
+                    c.send(JSON.stringify({ type: 'phoneUpdate', payload: globalAdminPhone }));
+                }
+            });
         } else if (data.type === 'statusUpdate' && ws === esp32Client) {
             // Handle ESP32 Status Updates
             const payload = data.payload;
