@@ -38,14 +38,23 @@ const ScheduleSchema = new mongoose.Schema({
 });
 const MotorSchedule = mongoose.model('MotorSchedule8c', ScheduleSchema);
 
+const defaultQuickUssds = [
+    { id: '1', code: '*566#', label: 'GP' },
+    { id: '2', code: '*121#', label: 'BL/Robi' },
+    { id: '3', code: '*222#', label: 'Robi/Air' },
+    { id: '4', code: '*152#', label: 'Teletalk' }
+];
+
 const SettingsSchema = new mongoose.Schema({
     isAlwaysOn: { type: Boolean, default: false },
-    adminPhones: { type: [String], default: [] }
+    adminPhones: { type: [String], default: [] },
+    quickUssds: { type: Array, default: defaultQuickUssds }
 });
 const SystemSettings = mongoose.model('SystemSettings8c', SettingsSchema);
 
 let globalAlwaysOn = false;
 let globalAdminPhones = [];
+let globalQuickUssds = defaultQuickUssds;
 SystemSettings.findOne().then(doc => {
     if(!doc) { new SystemSettings().save(); }
     else {
@@ -54,6 +63,9 @@ SystemSettings.findOne().then(doc => {
             globalAdminPhones = doc.adminPhones;
         } else if (doc.adminPhone) {
             globalAdminPhones = [doc.adminPhone];
+        }
+        if (doc.quickUssds && Array.isArray(doc.quickUssds) && doc.quickUssds.length > 0) {
+            globalQuickUssds = doc.quickUssds;
         }
     }
 }).catch(console.error);
@@ -151,6 +163,7 @@ wss.on('connection', (ws) => {
                 }
             }));
             ws.send(JSON.stringify({ type: 'phoneListUpdate', payload: globalAdminPhones }));
+            ws.send(JSON.stringify({ type: 'quickUssdUpdate', payload: globalQuickUssds }));
             
 
         } else if (data.type === 'command' && ws !== esp32Client) {
@@ -282,6 +295,18 @@ wss.on('connection', (ws) => {
                 ws.send(JSON.stringify({ type: 'alwaysOnUpdate', payload: globalAlwaysOn }));
             } else if (data.command === 'GET_PHONES' || data.command === 'GET_PHONE') {
                 ws.send(JSON.stringify({ type: 'phoneListUpdate', payload: globalAdminPhones }));
+            } else if (data.command === 'GET_QUICK_USSD') {
+                ws.send(JSON.stringify({ type: 'quickUssdUpdate', payload: globalQuickUssds }));
+            } else if (data.command === 'SET_QUICK_USSD') {
+                if (Array.isArray(data.value)) {
+                    globalQuickUssds = data.value;
+                    SystemSettings.findOneAndUpdate({}, { quickUssds: globalQuickUssds }, { upsert: true }).catch(console.error);
+                    webClients.forEach(c => {
+                        if (c.readyState === WebSocket.OPEN) {
+                            c.send(JSON.stringify({ type: 'quickUssdUpdate', payload: globalQuickUssds }));
+                        }
+                    });
+                }
             } else if (data.command === 'ADD_PHONE') {
                 const phoneToAdd = String(data.value || "").trim();
                 if (phoneToAdd.length >= 10 && globalAdminPhones.length < 5) {

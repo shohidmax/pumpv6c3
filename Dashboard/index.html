@@ -142,13 +142,16 @@
                                         </div>
                                     </div>
                                     
-                                    <!-- Quick Preset Buttons -->
-                                    <div class="flex flex-wrap gap-2 mt-2.5 items-center">
-                                        <span class="text-xs opacity-60">Quick:</span>
-                                        <button type="button" onclick="setUssdInput('*566#')" class="badge badge-outline hover:badge-secondary cursor-pointer transition font-mono">*566# (GP)</button>
-                                        <button type="button" onclick="setUssdInput('*121#')" class="badge badge-outline hover:badge-secondary cursor-pointer transition font-mono">*121# (BL/Robi)</button>
-                                        <button type="button" onclick="setUssdInput('*222#')" class="badge badge-outline hover:badge-secondary cursor-pointer transition font-mono">*222# (Robi/Air)</button>
-                                        <button type="button" onclick="setUssdInput('*152#')" class="badge badge-outline hover:badge-secondary cursor-pointer transition font-mono">*152# (Teletalk)</button>
+                                    <!-- Quick Preset Buttons with Add / Edit / Manage -->
+                                    <div class="flex flex-wrap gap-2 mt-3 items-center">
+                                        <span class="text-xs font-semibold opacity-70">Quick USSD:</span>
+                                        <div id="quickUssdContainer" class="flex flex-wrap gap-1.5 items-center">
+                                            <!-- Rendered by JS -->
+                                        </div>
+                                        <button type="button" onclick="openQuickUssdModal()" class="btn btn-xs btn-outline btn-secondary gap-1" title="Add, Edit or Delete Quick USSD">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                                            <span>Manage / Add</span>
+                                        </button>
                                     </div>
 
                                     <!-- USSD Response Display Box -->
@@ -324,6 +327,50 @@
         </div>
     </dialog>
 
+    <!-- Quick USSD Management Modal -->
+    <dialog id="quick_ussd_modal" class="modal">
+        <div class="modal-box max-w-lg bg-base-100">
+            <h3 class="font-bold text-lg mb-1 flex items-center gap-2 text-secondary">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                Manage Quick USSD Codes
+            </h3>
+            <p class="text-xs opacity-70 mb-4">Add, edit, or remove your favorite USSD codes for quick dialing</p>
+
+            <!-- Form for Add / Edit -->
+            <div class="p-3 sm:p-4 bg-base-200 rounded-lg border border-base-300 mb-4">
+                <div class="text-xs font-bold uppercase tracking-wider text-secondary mb-2" id="quickUssdFormTitle">Add New Quick USSD</div>
+                <input type="hidden" id="editQuickUssdId" value="" />
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+                    <div>
+                        <label class="label py-0.5"><span class="label-text text-xs font-semibold">USSD Code</span></label>
+                        <input type="text" id="quickUssdCodeInput" placeholder="*566#" class="input input-sm input-bordered w-full font-mono text-sm" />
+                    </div>
+                    <div>
+                        <label class="label py-0.5"><span class="label-text text-xs font-semibold">Label / Operator</span></label>
+                        <input type="text" id="quickUssdLabelInput" placeholder="e.g. GP Balance" class="input input-sm input-bordered w-full text-sm" />
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 mt-3">
+                    <button type="button" id="cancelEditQuickUssdBtn" onclick="resetQuickUssdForm()" class="btn btn-xs btn-ghost hidden">Cancel</button>
+                    <button type="button" onclick="saveQuickUssdItem()" class="btn btn-xs btn-primary gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                        <span id="saveQuickUssdBtnText">Save Code</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- List of Existing Codes -->
+            <div class="text-xs font-bold uppercase tracking-wider text-base-content/70 mb-2">Saved Codes</div>
+            <div id="quickUssdListContainer" class="space-y-2 max-h-56 overflow-y-auto p-1">
+                <!-- Rendered by JS -->
+            </div>
+
+            <div class="modal-action">
+                <form method="dialog"><button class="btn btn-sm">Close</button></form>
+            </div>
+        </div>
+    </dialog>
+
 <script>
     let ws;
     let pendingAction = null;
@@ -388,6 +435,7 @@
             sendCommand('GET_ALWAYS_ON');
             sendCommand('GET_SCHEDULES');
             sendCommand('GET_PHONES');
+            sendCommand('GET_QUICK_USSD');
         };
         ws.onmessage = (event) => {
             try {
@@ -401,6 +449,8 @@
                 } else if (data.type === 'phoneListUpdate' || data.type === 'phoneUpdate') {
                     const phoneData = Array.isArray(data.payload) ? data.payload : (data.payload ? [data.payload] : []);
                     renderPhoneList(phoneData);
+                } else if (data.type === 'quickUssdUpdate') {
+                    handleQuickUssdUpdate(data.payload);
                 } else if (data.type === 'ussdResponse') {
                     handleUSSDResponse(data);
                 } else if (data.type === 'alwaysOnUpdate') {
@@ -611,6 +661,150 @@
         }
         showToast('USSD response received!', 'success');
     }
+
+    // --- QUICK USSD PRESET MANAGEMENT ---
+    const defaultQuickUssds = [
+        { id: '1', code: '*566#', label: 'GP' },
+        { id: '2', code: '*121#', label: 'BL/Robi' },
+        { id: '3', code: '*222#', label: 'Robi/Air' },
+        { id: '4', code: '*152#', label: 'Teletalk' }
+    ];
+
+    let quickUssdList = (() => {
+        try {
+            const saved = localStorage.getItem('quick_ussd_presets');
+            return saved ? JSON.parse(saved) : defaultQuickUssds;
+        } catch(e) { return defaultQuickUssds; }
+    })();
+
+    function saveQuickUssdList(list) {
+        quickUssdList = list;
+        try { localStorage.setItem('quick_ussd_presets', JSON.stringify(quickUssdList)); } catch(e){}
+        sendCommand('SET_QUICK_USSD', quickUssdList);
+        renderQuickUssdPills();
+        renderQuickUssdModalList();
+    }
+
+    function handleQuickUssdUpdate(list) {
+        if (Array.isArray(list) && list.length > 0) {
+            quickUssdList = list;
+            try { localStorage.setItem('quick_ussd_presets', JSON.stringify(quickUssdList)); } catch(e){}
+            renderQuickUssdPills();
+            renderQuickUssdModalList();
+        }
+    }
+
+    function renderQuickUssdPills() {
+        const container = document.getElementById('quickUssdContainer');
+        if (!container) return;
+        if (quickUssdList.length === 0) {
+            container.innerHTML = '<span class="text-xs text-gray-400 italic">No presets</span>';
+            return;
+        }
+        container.innerHTML = quickUssdList.map(item => `
+            <div class="inline-flex items-center rounded-full bg-base-100 border border-secondary/40 shadow-xs hover:border-secondary transition overflow-hidden">
+                <button type="button" onclick="setUssdInput('${item.code}')" class="px-2.5 py-1 text-xs font-mono font-bold text-secondary hover:bg-secondary/10 transition cursor-pointer">
+                    ${item.code} ${item.label ? `<span class="opacity-75 font-sans font-normal text-[11px]">(${item.label})</span>` : ''}
+                </button>
+                <button type="button" onclick="editQuickUssdItem('${item.id}')" class="px-1.5 py-1 text-gray-400 hover:text-secondary hover:bg-secondary/10 transition border-l border-base-300" title="Edit ${item.code}">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                </button>
+            </div>
+        `).join('');
+    }
+
+    function openQuickUssdModal() {
+        resetQuickUssdForm();
+        renderQuickUssdModalList();
+        const modal = document.getElementById('quick_ussd_modal');
+        if (modal) modal.showModal();
+    }
+
+    function renderQuickUssdModalList() {
+        const listEl = document.getElementById('quickUssdListContainer');
+        if (!listEl) return;
+        if (quickUssdList.length === 0) {
+            listEl.innerHTML = '<div class="text-xs text-gray-400 italic text-center p-3">No quick codes saved. Add one above.</div>';
+            return;
+        }
+        listEl.innerHTML = quickUssdList.map(item => `
+            <div class="flex items-center justify-between p-2 bg-base-100 rounded-lg border border-base-300 hover:border-secondary/30 transition">
+                <div class="flex items-center gap-2">
+                    <span class="badge badge-secondary badge-sm font-mono font-bold">${item.code}</span>
+                    <span class="text-sm font-medium">${item.label || '--'}</span>
+                </div>
+                <div class="flex items-center gap-1">
+                    <button type="button" onclick="editQuickUssdItem('${item.id}')" class="btn btn-ghost btn-xs text-info" title="Edit">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                    </button>
+                    <button type="button" onclick="deleteQuickUssdItem('${item.id}')" class="btn btn-ghost btn-xs text-error" title="Delete">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function resetQuickUssdForm() {
+        document.getElementById('editQuickUssdId').value = '';
+        document.getElementById('quickUssdCodeInput').value = '';
+        document.getElementById('quickUssdLabelInput').value = '';
+        document.getElementById('quickUssdFormTitle').textContent = 'Add New Quick USSD';
+        document.getElementById('saveQuickUssdBtnText').textContent = 'Save Code';
+        document.getElementById('cancelEditQuickUssdBtn').classList.add('hidden');
+    }
+
+    function editQuickUssdItem(id) {
+        const item = quickUssdList.find(x => x.id === String(id));
+        if (!item) return;
+        openQuickUssdModal();
+        document.getElementById('editQuickUssdId').value = item.id;
+        document.getElementById('quickUssdCodeInput').value = item.code;
+        document.getElementById('quickUssdLabelInput').value = item.label || '';
+        document.getElementById('quickUssdFormTitle').textContent = `Edit USSD Code (${item.code})`;
+        document.getElementById('saveQuickUssdBtnText').textContent = 'Update Code';
+        document.getElementById('cancelEditQuickUssdBtn').classList.remove('hidden');
+        document.getElementById('quickUssdCodeInput').focus();
+    }
+
+    function saveQuickUssdItem() {
+        const editId = document.getElementById('editQuickUssdId').value;
+        const code = document.getElementById('quickUssdCodeInput').value.trim();
+        const label = document.getElementById('quickUssdLabelInput').value.trim();
+
+        if (!code) {
+            showToast('Please enter a USSD code (e.g. *566#)', 'error');
+            return;
+        }
+
+        if (editId) {
+            const idx = quickUssdList.findIndex(x => x.id === editId);
+            if (idx !== -1) {
+                quickUssdList[idx].code = code;
+                quickUssdList[idx].label = label;
+                showToast(`Updated ${code}`, 'success');
+            }
+        } else {
+            const newId = Date.now().toString();
+            quickUssdList.push({ id: newId, code, label });
+            showToast(`Added ${code}`, 'success');
+        }
+
+        saveQuickUssdList(quickUssdList);
+        resetQuickUssdForm();
+    }
+
+    function deleteQuickUssdItem(id) {
+        const item = quickUssdList.find(x => x.id === String(id));
+        const name = item ? item.code : 'this code';
+        quickUssdList = quickUssdList.filter(x => x.id !== String(id));
+        saveQuickUssdList(quickUssdList);
+        showToast(`Deleted ${name}`, 'info');
+        resetQuickUssdForm();
+    }
+
+    // Initial render on load
+    renderQuickUssdPills();
     
     document.getElementById('confirmActionButton').addEventListener('click', () => {
         if (pendingAction) {
