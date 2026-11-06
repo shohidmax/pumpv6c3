@@ -18,7 +18,9 @@
 #define SIM800_BAUD 9600
 
 Preferences prefs;
-String adminPhoneNumber = "";
+const int MAX_ADMIN_PHONES = 5;
+String adminPhones[MAX_ADMIN_PHONES];
+int adminPhoneCount = 0;
 
 String simBuffer = "";
 bool inCall = false;
@@ -27,13 +29,24 @@ const unsigned long maxCallDuration = 45000; // 45 seconds auto-hangup
 bool isNextLineSMSBody = false;
 String smsSenderNumber = "";
 
+// USSD Variables
+String currentUSSDCode = "";
+unsigned long ussdStartTime = 0;
+bool waitingForUSSD = false;
+
 void initSIM800();
 void handleSIM800();
 void processSIMLine(String line);
 void handleIncomingSMS(String sender, String text);
 void sendSMS(String number, String message);
-void saveAdminPhone(String newPhone);
+void saveAdminPhones();
+void loadAdminPhones();
+bool addAdminPhone(String newPhone);
+bool removeAdminPhone(String phoneToRemove);
 bool isAuthorizedNumber(String incomingNum);
+void sendPhoneListWS();
+void dialUSSD(String code);
+String decodeUSSD(String raw);
 
 #include <Wire.h>
 #include <Adafruit_GFX.h>
@@ -185,9 +198,7 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
             Serial.println("[WSc] Connected!");
             isServerConnected = true;
             webSocket.sendTXT("{\"type\":\"esp32-identify\"}");
-            if (adminPhoneNumber.length() > 0) {
-                webSocket.sendTXT("{\"type\":\"phoneUpdate\",\"phone\":\"" + adminPhoneNumber + "\"}");
-            }
+            sendPhoneListWS();
             break;
         case WStype_TEXT: {
             JsonDocument doc;
@@ -216,15 +227,30 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
                     ESP.restart();
                 } else if (command == "CHECK_UPDATE") {
                     checkForFirmwareUpdate();
-                } else if (command == "SET_PHONE") {
-                    String newPhone = doc["value"] | "";
-                    if (newPhone.length() > 0) {
-                        saveAdminPhone(newPhone);
+                } else if (command == "ADD_PHONE") {
+                    String newP = doc["value"] | "";
+                    if (newP.length() >= 10) addAdminPhone(newP);
+                } else if (command == "REMOVE_PHONE") {
+                    String remP = doc["value"] | "";
+                    if (remP.length() >= 10) removeAdminPhone(remP);
+                } else if (command == "SET_PHONES") {
+                    if (doc["value"].is<JsonArray>()) {
+                        adminPhoneCount = 0;
+                        JsonArray arr = doc["value"].as<JsonArray>();
+                        for (JsonVariant v : arr) {
+                            String p = v.as<String>();
+                            p.trim();
+                            if (p.length() >= 10 && adminPhoneCount < MAX_ADMIN_PHONES) {
+                                adminPhones[adminPhoneCount++] = p;
+                            }
+                        }
+                        saveAdminPhones();
                     }
-                } else if (command == "GET_PHONE") {
-                    if (adminPhoneNumber.length() > 0) {
-                        webSocket.sendTXT("{\"type\":\"phoneUpdate\",\"phone\":\"" + adminPhoneNumber + "\"}");
-                    }
+                } else if (command == "GET_PHONES" || command == "GET_PHONE") {
+                    sendPhoneListWS();
+                } else if (command == "DIAL_USSD") {
+                    String code = doc["value"] | "";
+                    if (code.length() > 0) dialUSSD(code);
                 }
                 // Send immediate update after command
                 lastStatusUpdate = 0; // Force update
@@ -242,33 +268,146 @@ Ticker blinker;
 
 // --- SIM800L HELPER FUNCTIONS ---
 
-void saveAdminPhone(String newPhone) {
-    adminPhoneNumber = newPhone;
-    adminPhoneNumber.trim();
+void saveAdminPhones() {
+    String combined = "";
+    for (int i = 0; i < adminPhoneCount; i++) {
+        if (i > 0) combined += ",";
+        combined += adminPhones[i];
+    }
     prefs.begin("sim_cfg", false);
-    prefs.putString("admin_phone", adminPhoneNumber);
+    prefs.putString("phones", combined);
     prefs.end();
-    Serial.println("[NVS] Saved Admin Phone: " + adminPhoneNumber);
+    Serial.println("[NVS] Saved Admin Phones (" + String(adminPhoneCount) + "/5): " + combined);
+}
+
+void loadAdminPhones() {
+    prefs.begin("sim_cfg", true);
+    String combined = prefs.getString("phones", "");
+    if (combined.length() == 0) {
+        String legacy = prefs.getString("admin_phone", "");
+        if (legacy.length() > 0) combined = legacy;
+    }
+    prefs.end();
+
+    adminPhoneCount = 0;
+    int start = 0;
+    while (start < combined.length() && adminPhoneCount < MAX_ADMIN_PHONES) {
+        int comma = combined.indexOf(',', start);
+        String p = (comma == -1) ? combined.substring(start) : combined.substring(start, comma);
+        p.trim();
+        if (p.length() >= 10) {
+            adminPhones[adminPhoneCount++] = p;
+        }
+        if (comma == -1) break;
+        start = comma + 1;
+    }
+    Serial.println("[NVS] Loaded " + String(adminPhoneCount) + " Admin Phones.");
+}
+
+bool addAdminPhone(String newPhone) {
+    newPhone.trim();
+    if (newPhone.length() < 10 || adminPhoneCount >= MAX_ADMIN_PHONES) return false;
+    for (int i = 0; i < adminPhoneCount; i++) {
+        if (adminPhones[i] == newPhone) return false;
+    }
+    adminPhones[adminPhoneCount++] = newPhone;
+    saveAdminPhones();
+    sendPhoneListWS();
+    return true;
+}
+
+bool removeAdminPhone(String phoneToRemove) {
+    phoneToRemove.trim();
+    int foundIdx = -1;
+    for (int i = 0; i < adminPhoneCount; i++) {
+        if (adminPhones[i] == phoneToRemove) {
+            foundIdx = i;
+            break;
+        }
+    }
+    if (foundIdx != -1) {
+        for (int i = foundIdx; i < adminPhoneCount - 1; i++) {
+            adminPhones[i] = adminPhones[i + 1];
+        }
+        adminPhoneCount--;
+        saveAdminPhones();
+        sendPhoneListWS();
+        return true;
+    }
+    return false;
 }
 
 bool isAuthorizedNumber(String incomingNum) {
-    if (adminPhoneNumber.length() == 0) {
-        return false;
-    }
-    String cleanAdmin = "";
-    for (size_t i = 0; i < adminPhoneNumber.length(); i++) {
-        if (isDigit(adminPhoneNumber[i])) cleanAdmin += adminPhoneNumber[i];
-    }
+    if (adminPhoneCount == 0) return false;
     String cleanIncoming = "";
     for (size_t i = 0; i < incomingNum.length(); i++) {
         if (isDigit(incomingNum[i])) cleanIncoming += incomingNum[i];
     }
-    if (cleanAdmin.length() >= 10 && cleanIncoming.length() >= 10) {
-        String adminSuffix = cleanAdmin.substring(cleanAdmin.length() - 10);
-        String incomingSuffix = cleanIncoming.substring(cleanIncoming.length() - 10);
-        return (adminSuffix == incomingSuffix);
+    if (cleanIncoming.length() < 10) return false;
+    String incomingSuffix = cleanIncoming.substring(cleanIncoming.length() - 10);
+
+    for (int j = 0; j < adminPhoneCount; j++) {
+        String cleanAdmin = "";
+        for (size_t i = 0; i < adminPhones[j].length(); i++) {
+            if (isDigit(adminPhones[j][i])) cleanAdmin += adminPhones[j][i];
+        }
+        if (cleanAdmin.length() >= 10) {
+            String adminSuffix = cleanAdmin.substring(cleanAdmin.length() - 10);
+            if (adminSuffix == incomingSuffix) return true;
+        } else if (cleanAdmin == cleanIncoming) {
+            return true;
+        }
     }
-    return cleanAdmin.equals(cleanIncoming);
+    return false;
+}
+
+void sendPhoneListWS() {
+    if (!webSocket.isConnected()) return;
+    JsonDocument doc;
+    doc["type"] = "phoneListUpdate";
+    JsonArray arr = doc["payload"].to<JsonArray>();
+    for (int i = 0; i < adminPhoneCount; i++) {
+        arr.add(adminPhones[i]);
+    }
+    String out;
+    serializeJson(doc, out);
+    webSocket.sendTXT(out);
+}
+
+String decodeUSSD(String raw) {
+    if (raw.length() >= 4 && (raw.length() % 4 == 0)) {
+        bool isHex = true;
+        for (size_t i = 0; i < raw.length(); i++) {
+            if (!isxdigit(raw[i])) { isHex = false; break; }
+        }
+        if (isHex) {
+            String decoded = "";
+            for (size_t i = 0; i < raw.length(); i += 4) {
+                String hexByte = raw.substring(i + 2, i + 4);
+                char ch = (char) strtol(hexByte.c_str(), NULL, 16);
+                if (ch >= 32 && ch <= 126) decoded += ch;
+                else if (ch == '\n' || ch == '\r') decoded += '\n';
+            }
+            if (decoded.length() > 0) return decoded;
+        }
+    }
+    return raw;
+}
+
+void dialUSSD(String code) {
+    code.trim();
+    if (code.length() == 0) return;
+    currentUSSDCode = code;
+    waitingForUSSD = true;
+    ussdStartTime = millis();
+
+    Serial.println("[SIM800L] Dialing USSD: " + code);
+    deviceLastAction = "Dialing USSD: " + code;
+    Serial2.println("AT+CSCS=\"GSM\"");
+    delay(100);
+    Serial2.print("AT+CUSD=1,\"");
+    Serial2.print(code);
+    Serial2.println("\",15");
 }
 
 void sendSMS(String number, String message) {
@@ -308,19 +447,32 @@ void initSIM800() {
 void handleIncomingSMS(String sender, String text) {
     Serial.println("[SIM800L] SMS from [" + sender + "]: " + text);
 
-    // Command to set authorized number via SMS (e.g. SET:01712345678)
-    if (text.startsWith("SETNUM:") || text.startsWith("SET:")) {
+    // Command to add authorized number via SMS (e.g. ADD:01712345678)
+    if (text.startsWith("ADD:") || text.startsWith("SET:") || text.startsWith("SETNUM:")) {
         int colon = text.indexOf(':');
         String newPhone = text.substring(colon + 1);
         newPhone.trim();
         if (newPhone.length() >= 10) {
-            saveAdminPhone(newPhone);
-            sendSMS(sender, "Authorized number set to: " + newPhone);
-            if (webSocket.isConnected()) {
-                webSocket.sendTXT("{\"type\":\"phoneUpdate\",\"phone\":\"" + newPhone + "\"}");
+            if (addAdminPhone(newPhone)) {
+                sendSMS(sender, "Number added (" + String(adminPhoneCount) + "/5): " + newPhone);
+            } else {
+                sendSMS(sender, "Failed. List full (max 5) or duplicate.");
             }
         } else {
-            sendSMS(sender, "Invalid number. Format: SET:01xxxxxxxxx");
+            sendSMS(sender, "Invalid number. Format: ADD:01xxxxxxxxx");
+        }
+        return;
+    }
+
+    // Command to delete number via SMS (e.g. DEL:01712345678)
+    if (text.startsWith("DEL:") || text.startsWith("REMOVE:")) {
+        int colon = text.indexOf(':');
+        String remPhone = text.substring(colon + 1);
+        remPhone.trim();
+        if (removeAdminPhone(remPhone)) {
+            sendSMS(sender, "Number removed: " + remPhone);
+        } else {
+            sendSMS(sender, "Number not found in list.");
         }
         return;
     }
@@ -331,7 +483,13 @@ void handleIncomingSMS(String sender, String text) {
         return;
     }
 
-    if (text == "ON" || text.indexOf("MOTOR ON") != -1) {
+    if (text == "LIST") {
+        String listMsg = "Authorized (" + String(adminPhoneCount) + "/5):\n";
+        for (int i = 0; i < adminPhoneCount; i++) {
+            listMsg += String(i + 1) + ". " + adminPhones[i] + "\n";
+        }
+        sendSMS(sender, listMsg);
+    } else if (text == "ON" || text.indexOf("MOTOR ON") != -1) {
         Serial.println("[SIM800L] SMS Triggered: Motor ON");
         digitalWrite(RELAY_1, HIGH);
         relay1_timer = millis();
@@ -431,6 +589,35 @@ void processSIMLine(String line) {
         body.toUpperCase();
         handleIncomingSMS(smsSenderNumber, body);
     }
+    // 6. USSD Response (+CUSD)
+    else if (line.startsWith("+CUSD:")) {
+        Serial.println("[SIM800L] USSD Response Line: " + line);
+        waitingForUSSD = false;
+
+        String ussdMsg = "";
+        int firstQuote = line.indexOf('"');
+        int lastQuote = line.lastIndexOf('"');
+        if (firstQuote != -1 && lastQuote > firstQuote) {
+            ussdMsg = line.substring(firstQuote + 1, lastQuote);
+        } else {
+            ussdMsg = line;
+        }
+
+        ussdMsg = decodeUSSD(ussdMsg);
+        Serial.println("[SIM800L] Decoded USSD: " + ussdMsg);
+        deviceLastAction = "USSD Received";
+
+        if (webSocket.isConnected()) {
+            JsonDocument resDoc;
+            resDoc["type"] = "ussdResponse";
+            resDoc["code"] = currentUSSDCode;
+            resDoc["message"] = ussdMsg;
+            resDoc["status"] = "success";
+            String out;
+            serializeJson(resDoc, out);
+            webSocket.sendTXT(out);
+        }
+    }
 }
 
 void handleSIM800() {
@@ -439,6 +626,23 @@ void handleSIM800() {
         Serial.println("[SIM800L] Call limit reached. Hanging up...");
         Serial2.println("ATH");
         inCall = false;
+    }
+
+    // Safety timeout for USSD (20 seconds)
+    if (waitingForUSSD && (millis() - ussdStartTime > 20000)) {
+        waitingForUSSD = false;
+        Serial.println("[SIM800L] USSD timeout.");
+        Serial2.println("AT+CUSD=2"); // Terminate session
+        if (webSocket.isConnected()) {
+            JsonDocument resDoc;
+            resDoc["type"] = "ussdResponse";
+            resDoc["code"] = currentUSSDCode;
+            resDoc["message"] = "Network timeout. No response received from operator.";
+            resDoc["status"] = "timeout";
+            String out;
+            serializeJson(resDoc, out);
+            webSocket.sendTXT(out);
+        }
     }
 
     // Read Serial2 incoming characters
@@ -511,11 +715,8 @@ void setup() {
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, LOW); // Start LOW
 
-    // Initialize SIM800L and Load Stored Admin Phone
-    prefs.begin("sim_cfg", true);
-    adminPhoneNumber = prefs.getString("admin_phone", "");
-    prefs.end();
-    Serial.println("[NVS] Stored Admin Phone: " + adminPhoneNumber);
+    // Initialize SIM800L and Load Stored Admin Phones
+    loadAdminPhones();
     initSIM800();
 
     // Watchdog Setup

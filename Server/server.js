@@ -40,17 +40,21 @@ const MotorSchedule = mongoose.model('MotorSchedule8c', ScheduleSchema);
 
 const SettingsSchema = new mongoose.Schema({
     isAlwaysOn: { type: Boolean, default: false },
-    adminPhone: { type: String, default: "" }
+    adminPhones: { type: [String], default: [] }
 });
 const SystemSettings = mongoose.model('SystemSettings8c', SettingsSchema);
 
 let globalAlwaysOn = false;
-let globalAdminPhone = "";
+let globalAdminPhones = [];
 SystemSettings.findOne().then(doc => {
     if(!doc) { new SystemSettings().save(); }
     else {
         globalAlwaysOn = doc.isAlwaysOn;
-        globalAdminPhone = doc.adminPhone || "";
+        if (doc.adminPhones && Array.isArray(doc.adminPhones)) {
+            globalAdminPhones = doc.adminPhones;
+        } else if (doc.adminPhone) {
+            globalAdminPhones = [doc.adminPhone];
+        }
     }
 }).catch(console.error);
 
@@ -124,9 +128,9 @@ wss.on('connection', (ws) => {
                 ws.send('{"command":"RELAY_1_ALWAYS"}');
             }
 
-            // Sync Admin Phone with ESP32
-            if (globalAdminPhone) {
-                ws.send(JSON.stringify({ command: 'SET_PHONE', value: globalAdminPhone }));
+            // Sync Admin Phones with ESP32
+            if (globalAdminPhones.length > 0) {
+                ws.send(JSON.stringify({ command: 'SET_PHONES', value: globalAdminPhones }));
             }
 
         } else if (data.type === 'web-identify' && !ws.isIdentified) {
@@ -137,7 +141,7 @@ wss.on('connection', (ws) => {
             const espStatus = (esp32Client && esp32Client.readyState === WebSocket.OPEN) ? 'online' : 'offline';
             ws.send(JSON.stringify({ type: 'espStatus', status: espStatus }));
             
-            // Send known motor status and admin phone
+            // Send known motor status and admin phones
             ws.send(JSON.stringify({
                 type: 'statusUpdate',
                 payload: {
@@ -146,7 +150,7 @@ wss.on('connection', (ws) => {
                    systemMode: "Normal"
                 }
             }));
-            ws.send(JSON.stringify({ type: 'phoneUpdate', payload: globalAdminPhone }));
+            ws.send(JSON.stringify({ type: 'phoneListUpdate', payload: globalAdminPhones }));
             
 
         } else if (data.type === 'command' && ws !== esp32Client) {
@@ -276,20 +280,56 @@ wss.on('connection', (ws) => {
                 }
             } else if (data.command === 'GET_ALWAYS_ON') {
                 ws.send(JSON.stringify({ type: 'alwaysOnUpdate', payload: globalAlwaysOn }));
-            } else if (data.command === 'GET_PHONE') {
-                ws.send(JSON.stringify({ type: 'phoneUpdate', payload: globalAdminPhone }));
-            } else if (data.command === 'SET_PHONE') {
-                globalAdminPhone = String(data.value || "").trim();
-                console.log("Admin phone updated to:", globalAdminPhone);
-                SystemSettings.findOneAndUpdate({}, { adminPhone: globalAdminPhone }, { upsert: true }).catch(console.error);
-                if (esp32Client && esp32Client.readyState === WebSocket.OPEN) {
-                    esp32Client.send(JSON.stringify({ command: 'SET_PHONE', value: globalAdminPhone }));
-                }
-                webClients.forEach(c => {
-                    if (c.readyState === WebSocket.OPEN) {
-                        c.send(JSON.stringify({ type: 'phoneUpdate', payload: globalAdminPhone }));
+            } else if (data.command === 'GET_PHONES' || data.command === 'GET_PHONE') {
+                ws.send(JSON.stringify({ type: 'phoneListUpdate', payload: globalAdminPhones }));
+            } else if (data.command === 'ADD_PHONE') {
+                const phoneToAdd = String(data.value || "").trim();
+                if (phoneToAdd.length >= 10 && globalAdminPhones.length < 5) {
+                    if (!globalAdminPhones.includes(phoneToAdd)) {
+                        globalAdminPhones.push(phoneToAdd);
+                        SystemSettings.findOneAndUpdate({}, { adminPhones: globalAdminPhones }, { upsert: true }).catch(console.error);
+                        console.log("Admin phone added. Current list:", globalAdminPhones);
+                        
+                        if (esp32Client && esp32Client.readyState === WebSocket.OPEN) {
+                            esp32Client.send(JSON.stringify({ command: 'SET_PHONES', value: globalAdminPhones }));
+                        }
+                        webClients.forEach(c => {
+                            if (c.readyState === WebSocket.OPEN) {
+                                c.send(JSON.stringify({ type: 'phoneListUpdate', payload: globalAdminPhones }));
+                            }
+                        });
                     }
-                });
+                }
+            } else if (data.command === 'REMOVE_PHONE') {
+                const phoneToRemove = String(data.value || "").trim();
+                const initialLen = globalAdminPhones.length;
+                globalAdminPhones = globalAdminPhones.filter(p => p !== phoneToRemove);
+                if (globalAdminPhones.length !== initialLen) {
+                    SystemSettings.findOneAndUpdate({}, { adminPhones: globalAdminPhones }, { upsert: true }).catch(console.error);
+                    console.log("Admin phone removed. Current list:", globalAdminPhones);
+                    
+                    if (esp32Client && esp32Client.readyState === WebSocket.OPEN) {
+                        esp32Client.send(JSON.stringify({ command: 'SET_PHONES', value: globalAdminPhones }));
+                    }
+                    webClients.forEach(c => {
+                        if (c.readyState === WebSocket.OPEN) {
+                            c.send(JSON.stringify({ type: 'phoneListUpdate', payload: globalAdminPhones }));
+                        }
+                    });
+                }
+            } else if (data.command === 'SET_PHONES') {
+                if (Array.isArray(data.value)) {
+                    globalAdminPhones = data.value.slice(0, 5).map(p => String(p).trim()).filter(p => p.length >= 10);
+                    SystemSettings.findOneAndUpdate({}, { adminPhones: globalAdminPhones }, { upsert: true }).catch(console.error);
+                    if (esp32Client && esp32Client.readyState === WebSocket.OPEN) {
+                        esp32Client.send(JSON.stringify({ command: 'SET_PHONES', value: globalAdminPhones }));
+                    }
+                    webClients.forEach(c => {
+                        if (c.readyState === WebSocket.OPEN) {
+                            c.send(JSON.stringify({ type: 'phoneListUpdate', payload: globalAdminPhones }));
+                        }
+                    });
+                }
             } else {
                  // Forward other commands (RELAY, RESET, RESTART) to ESP32
                 if (esp32Client && esp32Client.readyState === WebSocket.OPEN) {
@@ -298,13 +338,26 @@ wss.on('connection', (ws) => {
                 }
             }
 
-        } else if (data.type === 'phoneUpdate' && ws === esp32Client) {
-            globalAdminPhone = String(data.phone || "").trim();
-            console.log("Phone update received from ESP32:", globalAdminPhone);
-            SystemSettings.findOneAndUpdate({}, { adminPhone: globalAdminPhone }, { upsert: true }).catch(console.error);
+        } else if ((data.type === 'phoneListUpdate' || data.type === 'phoneUpdate') && ws === esp32Client) {
+            if (Array.isArray(data.phones || data.payload)) {
+                globalAdminPhones = (data.phones || data.payload).slice(0, 5);
+            } else if (data.phone) {
+                if (!globalAdminPhones.includes(data.phone) && globalAdminPhones.length < 5) {
+                    globalAdminPhones.push(data.phone);
+                }
+            }
+            console.log("Phone list updated from ESP32:", globalAdminPhones);
+            SystemSettings.findOneAndUpdate({}, { adminPhones: globalAdminPhones }, { upsert: true }).catch(console.error);
             webClients.forEach(c => {
                 if (c.readyState === WebSocket.OPEN) {
-                    c.send(JSON.stringify({ type: 'phoneUpdate', payload: globalAdminPhone }));
+                    c.send(JSON.stringify({ type: 'phoneListUpdate', payload: globalAdminPhones }));
+                }
+            });
+        } else if (data.type === 'ussdResponse' && ws === esp32Client) {
+            console.log("USSD response from ESP32:", data);
+            webClients.forEach(c => {
+                if (c.readyState === WebSocket.OPEN) {
+                    c.send(message.toString());
                 }
             });
         } else if (data.type === 'statusUpdate' && ws === esp32Client) {
