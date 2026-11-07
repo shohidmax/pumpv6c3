@@ -586,52 +586,26 @@
     let logCurrentPage = 0;
     let logTotalPages = 1;
 
-    // --- AUTHENTICATION STATE & LOGIC ---
+    // --- AUTHENTICATION STATE & LOGIC (pvrv3.maxapi.esp32.site ONLY) ---
+    const LIVE_SERVER_URL = 'https://pvrv3.maxapi.esp32.site';
+    const LIVE_WS_URL = 'wss://pvrv3.maxapi.esp32.site';
+
     let authToken = localStorage.getItem('motor_token') || null;
-    let detectedWorkingHost = localStorage.getItem('motor_api_host') || null;
+
+    function getApiUrl(endpoint) {
+        if (window.location.hostname === 'pvrv3.maxapi.esp32.site') {
+            return endpoint;
+        }
+        return LIVE_SERVER_URL + endpoint;
+    }
 
     async function apiFetch(endpoint, options = {}) {
-        const candidates = [];
-        if (detectedWorkingHost) candidates.push(detectedWorkingHost);
-        if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
-            candidates.push(''); // same origin (e.g. localhost:3000 or pvrv3.maxapi.esp32.site)
-        }
-        candidates.push('http://localhost:3000');
-        candidates.push('https://pvrv3.maxapi.esp32.site');
-
-        const uniqueCandidates = [...new Set(candidates)];
-        let lastError = null;
-
-        for (const base of uniqueCandidates) {
-            try {
-                const targetUrl = base + endpoint;
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 4000);
-                const reqOptions = { ...options, signal: controller.signal };
-                const res = await fetch(targetUrl, reqOptions);
-                clearTimeout(timeoutId);
-                detectedWorkingHost = base;
-                localStorage.setItem('motor_api_host', base);
-                return res;
-            } catch (err) {
-                lastError = err;
-            }
-        }
-        throw lastError || new Error('Connection failed');
+        const url = getApiUrl(endpoint);
+        return await fetch(url, options);
     }
 
     function getWsEndpoint() {
-        if (detectedWorkingHost && detectedWorkingHost.startsWith('http://localhost:3000')) {
-            return 'ws://localhost:3000';
-        }
-        if (detectedWorkingHost && detectedWorkingHost.includes('maxapi.esp32.site')) {
-            return 'wss://pvrv3.maxapi.esp32.site';
-        }
-        if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
-            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            return `${wsProtocol}//${window.location.host}`;
-        }
-        return 'ws://localhost:3000';
+        return LIVE_WS_URL;
     }
 
     async function checkAuthOnLoad() {

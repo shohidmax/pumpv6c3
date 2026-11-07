@@ -167,36 +167,18 @@
     </dialog>
 
     <script>
-        let detectedWorkingHost = localStorage.getItem('motor_api_host') || null;
+        const LIVE_SERVER_URL = 'https://pvrv3.maxapi.esp32.site';
+
+        function getApiUrl(endpoint) {
+            if (window.location.hostname === 'pvrv3.maxapi.esp32.site') {
+                return endpoint;
+            }
+            return LIVE_SERVER_URL + endpoint;
+        }
 
         async function apiFetch(endpoint, options = {}) {
-            const candidates = [];
-            if (detectedWorkingHost) candidates.push(detectedWorkingHost);
-            if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
-                candidates.push('');
-            }
-            candidates.push('http://localhost:3000');
-            candidates.push('https://pvrv3.maxapi.esp32.site');
-
-            const uniqueCandidates = [...new Set(candidates)];
-            let lastError = null;
-
-            for (const base of uniqueCandidates) {
-                try {
-                    const targetUrl = base + endpoint;
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 4000);
-                    const reqOptions = { ...options, signal: controller.signal };
-                    const res = await fetch(targetUrl, reqOptions);
-                    clearTimeout(timeoutId);
-                    detectedWorkingHost = base;
-                    localStorage.setItem('motor_api_host', base);
-                    return res;
-                } catch (err) {
-                    lastError = err;
-                }
-            }
-            throw lastError || new Error('Connection failed');
+            const url = getApiUrl(endpoint);
+            return await fetch(url, options);
         }
 
         // Check if already authenticated
