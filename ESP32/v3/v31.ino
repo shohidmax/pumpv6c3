@@ -49,6 +49,39 @@ void sendPhoneListWS();
 void dialUSSD(String code);
 String decodeUSSD(String raw);
 
+// --- DFPLAYER MINI MP3 MODULE CONFIGURATION ---
+// D27 -> DFPlayer Mini RX (pin 2) [ESP32 TX]
+// D14 -> DFPlayer Mini TX (pin 3) [ESP32 RX]
+#define DFPLAYER_RX_PIN 14 // ESP32 D14 (RX) <- DFPlayer Mini TX
+#define DFPLAYER_TX_PIN 27 // ESP32 D27 (TX) -> DFPlayer Mini RX
+#define DFPLAYER_BAUD 9600
+
+#define AUDIO_CALL_ANSWER 1 // 001.mp3 - Call Received / Greeting prompt
+#define AUDIO_MOTOR_ON    2 // 002.mp3 - Motor ON Audio
+#define AUDIO_MOTOR_OFF   3 // 003.mp3 - Motor OFF Audio
+
+// --- AUDIO TRACK LENGTHS / DURATIONS (in milliseconds) ---
+// অডিও ফাইলের দৈর্ঘ্য অনুযায়ী সময় (মিলি-সেকেন্ডে)
+unsigned long audioDuration_001 = 8000; // 001.mp3: Call Greeting length (8 seconds)
+unsigned long audioDuration_002 = 5000; // 002.mp3: Motor ON Audio length (5 seconds)
+unsigned long audioDuration_003 = 5000; // 003.mp3: Motor OFF Audio length (5 seconds)
+
+// Audio playback state tracking
+bool isAudioPlaying = false;
+unsigned long audioStartTime = 0;
+unsigned long currentAudioDuration = 0;
+int currentPlayingTrack = 0;
+bool hangupAfterAudio = false;
+
+HardwareSerial dfSerial(1); // Hardware UART1 for DFPlayer Mini
+
+void initDFPlayer();
+void handleDFPlayer();
+void onAudioFinished();
+void playAudio(int trackNumber, unsigned long durationMs = 0, bool autoHangup = false);
+void setAudioVolume(int volume);
+void stopAudio();
+
 
 // --- Configuration ---
 const char* websocket_server_host = "pvrv3.maxapi.esp32.site";
@@ -59,7 +92,7 @@ const uint16_t websocket_server_port = 443;
 const char* firmwareUrl = "https://github.com/shohidmax/pumpv6c3/releases/download/c6v3/v3.ino.bin";
 const char* versionUrl = "https://raw.githubusercontent.com/shohidmax/pumpv6c3/refs/heads/main/Server/version.txt";
 // Current firmware version
-const char* currentFirmwareVersion = "1.1.7";
+const char* currentFirmwareVersion = "2.2.5";
 
 // Timers
 unsigned long lastUpdateCheck = 0;
@@ -178,9 +211,11 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
                 if (command == "RELAY_1") {
                     digitalWrite(RELAY_1, HIGH);
                     relay1_timer = millis();
+                    playAudio(AUDIO_MOTOR_ON);
                 } else if (command == "RELAY_2") {
                     digitalWrite(RELAY_2, HIGH);
                     relay2_timer = millis();
+                    playAudio(AUDIO_MOTOR_OFF);
                 } else if (command == "RESET") {
                     digitalWrite(relay_3, HIGH);
                     relay3_timer = millis();
@@ -214,6 +249,14 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
                 } else if (command == "DIAL_USSD") {
                     String code = doc["value"] | "";
                     if (code.length() > 0) dialUSSD(code);
+                } else if (command == "PLAY_AUDIO") {
+                    int track = doc["value"] | (doc["track"] | 1);
+                    playAudio(track);
+                } else if (command == "SET_VOLUME") {
+                    int vol = doc["value"] | (doc["volume"] | 28);
+                    setAudioVolume(vol);
+                } else if (command == "STOP_AUDIO") {
+                    stopAudio();
                 }
                 // Send immediate update after command
                 lastStatusUpdate = 0; // Force update
@@ -228,6 +271,126 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
 // LED Definition
 #define LED_PIN 2
 Ticker blinker;
+
+// --- DFPLAYER MINI HELPER FUNCTIONS ---
+uint8_t dfRxBuf[10];
+uint8_t dfRxIdx = 0;
+
+void dfplayer_send_cmd(uint8_t cmd, uint16_t arg) {
+    uint8_t buf[10];
+    buf[0] = 0x7E;
+    buf[1] = 0xFF;
+    buf[2] = 0x06;
+    buf[3] = cmd;
+    buf[4] = 0x00;
+    buf[5] = (uint8_t)(arg >> 8);
+    buf[6] = (uint8_t)(arg & 0xFF);
+    uint16_t checksum = 0 - (buf[1] + buf[2] + buf[3] + buf[4] + buf[5] + buf[6]);
+    buf[7] = (uint8_t)(checksum >> 8);
+    buf[8] = (uint8_t)(checksum & 0xFF);
+    buf[9] = 0xEF;
+    dfSerial.write(buf, 10);
+}
+
+void playAudio(int trackNumber, unsigned long durationMs, bool autoHangup) {
+    if (durationMs == 0) {
+        if (trackNumber == 1) durationMs = audioDuration_001;
+        else if (trackNumber == 2) durationMs = audioDuration_002;
+        else if (trackNumber == 3) durationMs = audioDuration_003;
+        else durationMs = 5000;
+    }
+
+    Serial.print("[DFPlayer] Playing Audio Track: ");
+    Serial.print(trackNumber);
+    Serial.print(" (Duration: ");
+    Serial.print(durationMs);
+    Serial.print("ms, AutoHangup: ");
+    Serial.print(autoHangup ? "YES" : "NO");
+    Serial.println(")");
+
+    dfplayer_send_cmd(0x03, (uint16_t)trackNumber);
+
+    currentPlayingTrack = trackNumber;
+    audioStartTime = millis();
+    currentAudioDuration = durationMs;
+    isAudioPlaying = true;
+    hangupAfterAudio = autoHangup;
+}
+
+void setAudioVolume(int volume) {
+    if (volume < 0) volume = 0;
+    if (volume > 30) volume = 30;
+    Serial.print("[DFPlayer] Set Volume: ");
+    Serial.print(volume);
+    Serial.println("/30");
+    dfplayer_send_cmd(0x06, (uint16_t)volume);
+}
+
+void stopAudio() {
+    Serial.println("[DFPlayer] Audio Stopped");
+    dfplayer_send_cmd(0x16, 0);
+    isAudioPlaying = false;
+    hangupAfterAudio = false;
+}
+
+void onAudioFinished() {
+    Serial.print("[DFPlayer] Audio finished for track ");
+    Serial.println(currentPlayingTrack);
+
+    if (inCall && hangupAfterAudio) {
+        Serial.println("[SIM800L] Audio completed for full length. Hanging up call now...");
+        delay(400);
+        Serial2.println("ATH"); // Hang up call
+        inCall = false;
+        hangupAfterAudio = false;
+        stopAudio();
+    }
+}
+
+void handleDFPlayer() {
+    // 1. Non-blocking hardware feedback from DFPlayer TX (ESP32 RX=14)
+    while (dfSerial.available() > 0) {
+        uint8_t b = dfSerial.read();
+        if (dfRxIdx == 0) {
+            if (b == 0x7E) dfRxBuf[dfRxIdx++] = b;
+        } else {
+            dfRxBuf[dfRxIdx++] = b;
+            if (dfRxIdx == 10) {
+                if (dfRxBuf[9] == 0xEF) {
+                    uint8_t cmd = dfRxBuf[3];
+                    uint16_t track = ((uint16_t)dfRxBuf[5] << 8) | dfRxBuf[6];
+                    if (cmd == 0x3D || cmd == 0x3C || cmd == 0x3E) {
+                        Serial.print("[DFPlayer] Hardware Feedback: Track finished -> ");
+                        Serial.println(track);
+                        if (isAudioPlaying) {
+                            isAudioPlaying = false;
+                            onAudioFinished();
+                        }
+                    }
+                }
+                dfRxIdx = 0;
+            }
+        }
+    }
+
+    // 2. Audio duration timer check (Ensures playback takes full audio length)
+    if (isAudioPlaying) {
+        if (millis() - audioStartTime >= currentAudioDuration) {
+            Serial.print("[DFPlayer] Audio track completed by duration timer (");
+            Serial.print(currentAudioDuration);
+            Serial.println("ms)");
+            isAudioPlaying = false;
+            onAudioFinished();
+        }
+    }
+}
+
+void initDFPlayer() {
+    Serial.println("[DFPlayer] Initializing on RX=14, TX=27 at 9600 baud...");
+    dfSerial.begin(DFPLAYER_BAUD, SERIAL_8N1, DFPLAYER_RX_PIN, DFPLAYER_TX_PIN);
+    delay(200);
+    setAudioVolume(28); // Set volume (0-30)
+}
 
 // --- SIM800L HELPER FUNCTIONS ---
 
@@ -457,12 +620,14 @@ void handleIncomingSMS(String sender, String text) {
         relay1_timer = millis();
         lastStatusUpdate = 0;
         sendSMS(sender, "Motor has been turned ON.");
+        playAudio(AUDIO_MOTOR_ON);
     } else if (text == "OFF" || text.indexOf("MOTOR OFF") != -1) {
         Serial.println("[SIM800L] SMS Triggered: Motor OFF");
         digitalWrite(RELAY_2, HIGH);
         relay2_timer = millis();
         lastStatusUpdate = 0;
         sendSMS(sender, "Motor has been turned OFF.");
+        playAudio(AUDIO_MOTOR_OFF);
     } else if (text == "STATUS" || text.indexOf("STATUS") != -1) {
         String currentMode = (digitalRead(SWITCH_2) == LOW) ? "Normal" : "Emergency";
         String statusMsg = "Motor: " + stableMotorState + "\nMode: " + currentMode + "\nWiFi: " + (WiFi.status() == WL_CONNECTED ? "Connected" : "Offline");
@@ -491,6 +656,11 @@ void processSIMLine(String line) {
                 Serial2.println("AT+DDET=1"); // Enable DTMF detection
                 inCall = true;
                 callStartTime = millis();
+
+                // Call Received: Play greeting/prompt audio (001.mp3)
+                // Audio length অনুযায়ী সময় নিয়ে play হবে
+                delay(400); // Allow call audio path to connect
+                playAudio(AUDIO_CALL_ANSWER, audioDuration_001, false);
             } else {
                 Serial.println("[SIM800L] Unauthorized Caller. Rejecting...");
                 Serial2.println("ATH"); // Reject call
@@ -512,11 +682,15 @@ void processSIMLine(String line) {
                     digitalWrite(RELAY_1, HIGH);
                     relay1_timer = millis();
                     lastStatusUpdate = 0;
+                    // Audio 002 length অনুযায়ী সময় নিয়ে প্লে হবে, তারপর কল কেটে যাবে
+                    playAudio(AUDIO_MOTOR_ON, audioDuration_002, true);
                 } else if (key == '2') {
                     Serial.println("[SIM800L] DTMF 2: Turning Motor OFF");
                     digitalWrite(RELAY_2, HIGH);
                     relay2_timer = millis();
                     lastStatusUpdate = 0;
+                    // Audio 003 length অনুযায়ী সময় নিয়ে প্লে হবে, তারপর কল কেটে যাবে
+                    playAudio(AUDIO_MOTOR_OFF, audioDuration_003, true);
                 }
             }
         }
@@ -525,6 +699,8 @@ void processSIMLine(String line) {
     else if (line.indexOf("NO CARRIER") != -1 || line.indexOf("BUSY") != -1 || line.indexOf("DISCONNECT") != -1) {
         Serial.println("[SIM800L] Call ended.");
         inCall = false;
+        hangupAfterAudio = false;
+        stopAudio();
     }
     // 4. Incoming SMS (+CMT)
     else if (line.startsWith("+CMT:")) {
@@ -579,6 +755,8 @@ void handleSIM800() {
         Serial.println("[SIM800L] Call limit reached. Hanging up...");
         Serial2.println("ATH");
         inCall = false;
+        hangupAfterAudio = false;
+        stopAudio();
     }
 
     // Safety timeout for USSD (20 seconds)
@@ -645,6 +823,7 @@ void setup() {
     // Initialize SIM800L and Load Stored Admin Phones
     loadAdminPhones();
     initSIM800();
+    initDFPlayer();
 
     // Watchdog Setup
     esp_task_wdt_deinit();
@@ -707,7 +886,8 @@ void setup() {
 void loop() {
     esp_task_wdt_reset(); // Keep device alive
     webSocket.loop();
-    handleSIM800(); // SIM800L Non-blocking Call, SMS & DTMF handler
+    handleSIM800();   // SIM800L Non-blocking Call, SMS & DTMF handler
+    handleDFPlayer(); // DFPlayer Non-blocking Audio Length & Playback handler
 
     // FIXED: Smart Reconnect Logic
     // এটি প্রতি ১০ সেকেন্ডে চেক করবে কানেকশন আছে কিনা। না থাকলে রিকানেক্ট করবে।
