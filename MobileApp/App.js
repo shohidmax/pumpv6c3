@@ -399,14 +399,14 @@ export default function App() {
         })
       );
     } else {
-      Alert.alert('অফলাইন', 'সার্ভারের সাথে সংযোগ নেই। অনুগ্রহ করে অপেক্ষা করুন।');
+      Alert.alert('Offline', 'No connection to server. Please wait.');
     }
   };
 
   // 3. Auth Actions
   const handleLogin = async () => {
     if (!loginPassword.trim()) {
-      setLoginError('দয়া করে পাসওয়ার্ড লিখুন');
+      setLoginError('Please enter password');
       return;
     }
     setLoginError('');
@@ -426,20 +426,20 @@ export default function App() {
         setLoginPassword('');
         connectWebSocket(wsUrl, data.token);
       } else {
-        setLoginError(data.message || 'ভুল পাসওয়ার্ড! আবার চেষ্টা করুন।');
+        setLoginError(data.message || 'Incorrect password! Please try again.');
       }
     } catch (err) {
-      setLoginError('সার্ভারের সাথে কানেক্ট করা যাচ্ছে না। URL যাচাই করুন।');
+      setLoginError('Cannot connect to server. Please check URL.');
     } finally {
       setIsLoggingIn(false);
     }
   };
 
   const handleLogout = async () => {
-    Alert.alert('লগআউট', 'আপনি কি নিশ্চিত যে লগআউট করতে চান?', [
-      { text: 'বাতিল', style: 'cancel' },
+    Alert.alert('Logout', 'Are you sure you want to log out?', [
+      { text: 'Cancel', style: 'cancel' },
       {
-        text: 'লগআউট',
+        text: 'Log Out',
         style: 'destructive',
         onPress: async () => {
           if (authToken) {
@@ -472,20 +472,20 @@ export default function App() {
     await AsyncStorage.setItem('server_http_url', clean);
     await AsyncStorage.setItem('server_ws_url', wsClean);
     setShowServerConfig(false);
-    Alert.alert('সফল', `সার্ভার URL আপডেট হয়েছে:\n${clean}`);
+    Alert.alert('Success', `Server URL updated:\n${clean}`);
   };
 
   const handleChangePassword = async () => {
     if (!oldPassword || !newPassword || !confirmPassword) {
-      Alert.alert('ভুল', 'সবগুলো ফিল্ড পূরণ করুন');
+      Alert.alert('Error', 'Please fill in all fields');
       return;
     }
     if (newPassword !== confirmPassword) {
-      Alert.alert('ভুল', 'নতুন পাসওয়ার্ড দুটি মিলছে না!');
+      Alert.alert('Error', 'New passwords do not match!');
       return;
     }
     if (newPassword.length < 3) {
-      Alert.alert('ভুল', 'নতুন পাসওয়ার্ড কমপক্ষে ৩ অক্ষরের হতে হবে');
+      Alert.alert('Error', 'New password must be at least 3 characters');
       return;
     }
 
@@ -502,16 +502,16 @@ export default function App() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        Alert.alert('সফল', data.message || 'পাসওয়ার্ড সফলভাবে পরিবর্তিত হয়েছে!');
+        Alert.alert('Success', data.message || 'Password changed successfully!');
         setChangePwdVisible(false);
         setOldPassword('');
         setNewPassword('');
         setConfirmPassword('');
       } else {
-        Alert.alert('ব্যর্থ', data.message || 'পাসওয়ার্ড পরিবর্তন করা যায়নি!');
+        Alert.alert('Failed', data.message || 'Failed to change password!');
       }
     } catch (e) {
-      Alert.alert('ত্রুটি', 'সার্ভার যোগাযোগে সমস্যা হয়েছে।');
+      Alert.alert('Error', 'Server communication error.');
     } finally {
       setChangePwdLoading(false);
     }
@@ -519,15 +519,15 @@ export default function App() {
 
   const handleResetPasswordByPhone = async () => {
     if (!resetPhone.trim() || !resetNewPwd.trim() || !resetConfirmPwd.trim()) {
-      Alert.alert('ভুল', 'সবগুলো ফিল্ড পূরণ করুন');
+      Alert.alert('Error', 'Please fill in all fields');
       return;
     }
     if (resetNewPwd !== resetConfirmPwd) {
-      Alert.alert('ভুল', 'নতুন পাসওয়ার্ড দুটি মিলছে না!');
+      Alert.alert('Error', 'New passwords do not match!');
       return;
     }
     if (resetNewPwd.length < 3) {
-      Alert.alert('ভুল', 'নতুন পাসওয়ার্ড কমপক্ষে ৩ অক্ষরের হতে হবে');
+      Alert.alert('Error', 'New password must be at least 3 characters');
       return;
     }
 
@@ -544,19 +544,19 @@ export default function App() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        Alert.alert('সফল', data.message || 'পাসওয়ার্ড সফলভাবে পরিবর্তন হয়েছে!');
+        Alert.alert('Success', data.message || 'Password changed successfully!');
         setResetModalVisible(false);
         setLoginPassword(resetNewPwd.trim());
         setResetPhone('');
         setResetNewPwd('');
         setResetConfirmPwd('');
       } else {
-        setResetError(data.message || 'পাসওয়ার্ড পরিবর্তন করা যায়নি!');
-        Alert.alert('ব্যর্থ', data.message || 'পাসওয়ার্ড পরিবর্তন করা যায়নি!');
+        setResetError(data.message || 'Failed to reset password!');
+        Alert.alert('Failed', data.message || 'Failed to change password!');
       }
     } catch (e) {
-      setResetError('সার্ভারের সাথে যোগাযোগ করা যাচ্ছে না।');
-      Alert.alert('ত্রুটি', 'সার্ভারের সাথে যোগাযোগ করা যাচ্ছে না।');
+      setResetError('Cannot connect to server.');
+      Alert.alert('Error', 'Cannot connect to server.');
     } finally {
       setResetLoading(false);
     }
@@ -580,11 +580,11 @@ export default function App() {
   const handleAddPhone = () => {
     const clean = newPhoneInput.trim();
     if (clean.length < 10) {
-      Alert.alert('ভুল', 'সঠিক মোবাইল নম্বর লিখুন (যেমন: 01712345678)');
+      Alert.alert('Error', 'Enter a valid mobile number (e.g. 01712345678)');
       return;
     }
     if (adminPhones.length >= 5) {
-      Alert.alert('সীমা শেষ', 'সর্বোচ্চ ৫টি নম্বর যুক্ত করা যাবে।');
+      Alert.alert('Limit Reached', 'Maximum 5 numbers allowed.');
       return;
     }
     sendWsCommand('ADD_PHONE', clean);
@@ -593,10 +593,10 @@ export default function App() {
   };
 
   const handleRemovePhone = (phone) => {
-    Alert.alert('মুছে ফেলুন', `আপনি কি ${phone} নম্বরটি মুছে ফেলতে চান?`, [
-      { text: 'না', style: 'cancel' },
+    Alert.alert('Delete Number', `Are you sure you want to delete ${phone}?`, [
+      { text: 'No', style: 'cancel' },
       {
-        text: 'হ্যাঁ, মুছুন',
+        text: 'Yes, Delete',
         style: 'destructive',
         onPress: () => sendWsCommand('REMOVE_PHONE', phone),
       },
@@ -607,7 +607,7 @@ export default function App() {
   const handleDialUssd = (codeToDial) => {
     const code = (codeToDial || ussdInput).trim();
     if (!code) {
-      Alert.alert('ভুল', 'ইউএসএসডি কোড লিখুন (যেমন: *566#)');
+      Alert.alert('Error', 'Enter a USSD code (e.g. *566#)');
       return;
     }
     setIsDialingUssd(true);
@@ -624,12 +624,12 @@ export default function App() {
 
   const handleClearAllLogs = () => {
     Alert.alert(
-      'সব লগ মুছে ফেলবেন?',
-      'আপনি কি নিশ্চিত যে সার্ভার থেকে সমস্ত মোটর রান লগ মুছে ফেলতে চান?',
+      'Clear All Logs?',
+      'Are you sure you want to delete all motor activity logs from server?',
       [
-        { text: 'বাতিল', style: 'cancel' },
+        { text: 'Cancel', style: 'cancel' },
         {
-          text: 'হ্যাঁ, মুছুন',
+          text: 'Yes, Delete',
           style: 'destructive',
           onPress: () => {
             sendWsCommand('CLEAR_LOGS');
@@ -658,7 +658,7 @@ export default function App() {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#0284c7" />
-        <Text style={styles.loadingText}>মুঠো-সেচ লোড হচ্ছে...</Text>
+        <Text style={styles.loadingText}>Loading Mutho-Sech...</Text>
       </View>
     );
   }
@@ -676,20 +676,20 @@ export default function App() {
             <View style={styles.loginIconBadge}>
               <Text style={styles.loginIconText}>⚡</Text>
             </View>
-            <Text style={styles.loginTitle}>মুঠো-সেচ কন্ট্রোলার</Text>
+            <Text style={styles.loginTitle}>Mutho-Sech Controller</Text>
             <Text style={styles.loginSubtitle}>Smart Pump & Motor Controller</Text>
             <Text style={styles.loginInstruction}>
-              মোটর কন্ট্রোল প্যানেলে প্রবেশ করতে পাসওয়ার্ড দিন
+              Enter system password to access control panel
             </Text>
           </View>
 
           {/* Login Card */}
           <View style={styles.loginCard}>
-            <Text style={styles.inputLabel}>সিস্টেম পাসওয়ার্ড (Password)</Text>
+            <Text style={styles.inputLabel}>System Password</Text>
             <View style={styles.passwordInputWrapper}>
               <TextInput
                 style={styles.passwordInput}
-                placeholder="পাসওয়ার্ড লিখুন..."
+                placeholder="Enter password..."
                 placeholderTextColor="#94a3b8"
                 secureTextEntry={!showPassword}
                 value={loginPassword}
@@ -718,7 +718,7 @@ export default function App() {
               {isLoggingIn ? (
                 <ActivityIndicator color="#fff" size="small" />
               ) : (
-                <Text style={styles.loginBtnText}>লগইন করে প্রবেশ করুন</Text>
+                <Text style={styles.loginBtnText}>Log In to Panel</Text>
               )}
             </TouchableOpacity>
 
@@ -731,12 +731,12 @@ export default function App() {
               }}
             >
               <Text style={styles.forgotPwdBtnText}>
-                🔑 পাসওয়ার্ড ভুলে গেছেন? রেজিস্টার্ড নম্বর দিয়ে রিসেট করুন
+                🔑 Forgot Password? Reset with registered number
               </Text>
             </TouchableOpacity>
 
             <View style={styles.defaultPwdNote}>
-              <Text style={styles.defaultPwdText}>ডিফল্ট পাসওয়ার্ড: 1234</Text>
+              <Text style={styles.defaultPwdText}>Default Password: 1234</Text>
             </View>
           </View>
 
@@ -746,13 +746,13 @@ export default function App() {
             onPress={() => setShowServerConfig(!showServerConfig)}
           >
             <Text style={styles.serverConfigToggleText}>
-              ⚙️ সার্ভার সেটিংস ({serverUrl.replace('https://', '').replace('http://', '')})
+              ⚙️ Server Settings ({serverUrl.replace('https://', '').replace('http://', '')})
             </Text>
           </TouchableOpacity>
 
           {showServerConfig && (
             <View style={styles.serverConfigBox}>
-              <Text style={styles.serverConfigLabel}>সার্ভার URL (HTTP/HTTPS):</Text>
+              <Text style={styles.serverConfigLabel}>Server URL (HTTP/HTTPS):</Text>
               <TextInput
                 style={styles.serverConfigInput}
                 value={customServerInput}
@@ -764,7 +764,7 @@ export default function App() {
                 style={styles.saveServerBtn}
                 onPress={handleSaveCustomServer}
               >
-                <Text style={styles.saveServerBtnText}>URL সেভ করুন</Text>
+                <Text style={styles.saveServerBtnText}>Save URL</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -779,14 +779,14 @@ export default function App() {
         >
           <View style={styles.modalOverlay}>
             <View style={styles.confirmModalBox}>
-              <Text style={styles.confirmModalTitle}>📱 পাসওয়ার্ড রিসেট</Text>
+              <Text style={styles.confirmModalTitle}>📱 Reset Password</Text>
               <Text style={styles.confirmModalMessage}>
-                আপনার সিস্টেমে নিবন্ধিত মোবাইল নম্বর দিন। সত্যতা নিশ্চিত হলে নতুন পাসওয়ার্ড কার্যকর হবে।
+                Enter registered mobile number. Verified number allows setting a new password.
               </Text>
 
               <TextInput
                 style={styles.modalInput}
-                placeholder="রেজিস্টার্ড নম্বর (যেমন 017xxxxxxxx)"
+                placeholder="Registered number (e.g. 017xxxxxxxx)"
                 placeholderTextColor="#64748b"
                 value={resetPhone}
                 onChangeText={setResetPhone}
@@ -795,7 +795,7 @@ export default function App() {
 
               <TextInput
                 style={styles.modalInput}
-                placeholder="নতুন পাসওয়ার্ড (কমপক্ষে ৩ অক্ষর)"
+                placeholder="New password (min 3 chars)"
                 placeholderTextColor="#64748b"
                 value={resetNewPwd}
                 onChangeText={setResetNewPwd}
@@ -804,7 +804,7 @@ export default function App() {
 
               <TextInput
                 style={styles.modalInput}
-                placeholder="নতুন পাসওয়ার্ড নিশ্চিত করুন"
+                placeholder="Confirm new password"
                 placeholderTextColor="#64748b"
                 value={resetConfirmPwd}
                 onChangeText={setResetConfirmPwd}
@@ -823,7 +823,7 @@ export default function App() {
                   onPress={() => setResetModalVisible(false)}
                   disabled={resetLoading}
                 >
-                  <Text style={styles.confirmBtnText}>বাতিল</Text>
+                  <Text style={styles.confirmBtnText}>Cancel</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -834,7 +834,7 @@ export default function App() {
                   {resetLoading ? (
                     <ActivityIndicator color="#fff" size="small" />
                   ) : (
-                    <Text style={styles.confirmBtnText}>রিসেট করুন</Text>
+                    <Text style={styles.confirmBtnText}>Reset Password</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -855,7 +855,7 @@ export default function App() {
       {/* Top App Bar */}
       <View style={styles.appBar}>
         <View>
-          <Text style={styles.appBarTitle}>মুঠো-সেচ</Text>
+          <Text style={styles.appBarTitle}>Mutho-Sech</Text>
           <Text style={styles.appBarSubtitle}>v{firmwareVersion} • IP: {localIP}</Text>
         </View>
 
@@ -971,17 +971,17 @@ export default function App() {
                       ]}
                     />
                     <Text style={styles.motorCardStatus}>
-                      {motorStatus === 'ON' ? 'মোটর চলছে (ON)' : 'মোটর বন্ধ (OFF)'}
+                      {motorStatus === 'ON' ? 'MOTOR RUNNING (ON)' : 'MOTOR STOPPED (OFF)'}
                     </Text>
                   </View>
 
                   {motorStatus === 'ON' ? (
                     <View style={styles.runningTimerBadge}>
                       <Text style={styles.timerIcon}>⏱️</Text>
-                      <Text style={styles.timerText}>চলছে: {formatElapsedTime(motorRunSeconds)}</Text>
+                      <Text style={styles.timerText}>Running: {formatElapsedTime(motorRunSeconds)}</Text>
                     </View>
                   ) : (
-                    <Text style={styles.motorSubtitleText}>সিস্টেম প্রস্তুত রয়েছে</Text>
+                    <Text style={styles.motorSubtitleText}>System Standby / Ready</Text>
                   )}
                 </View>
               </View>
@@ -989,26 +989,26 @@ export default function App() {
               {/* Meta details bar */}
               <View style={styles.motorMetaRow}>
                 <View style={styles.metaCol}>
-                  <Text style={styles.metaKey}>WiFi সিগন্যাল</Text>
+                  <Text style={styles.metaKey}>WiFi Signal</Text>
                   <Text style={styles.metaVal}>📶 {wifiSignal}%</Text>
                 </View>
                 <View style={styles.metaDivider} />
                 <View style={styles.metaCol}>
-                  <Text style={styles.metaKey}>ডিভাইস আইপি</Text>
+                  <Text style={styles.metaKey}>Device IP</Text>
                   <Text style={styles.metaVal}>{localIP}</Text>
                 </View>
                 <View style={styles.metaDivider} />
                 <View style={styles.metaCol}>
-                  <Text style={styles.metaKey}>সার্ভার স্টেটাস</Text>
+                  <Text style={styles.metaKey}>Server Status</Text>
                   <Text style={[styles.metaVal, { color: wsConnected ? '#4ade80' : '#f87171' }]}>
-                    {wsConnected ? 'কানেক্টেড' : 'ডিসকানেক্ট'}
+                    {wsConnected ? 'Connected' : 'Disconnected'}
                   </Text>
                 </View>
               </View>
 
               {/* Last Action Bar */}
               <View style={styles.lastActionBox}>
-                <Text style={styles.lastActionLabel}>সর্বশেষ অবস্থা:</Text>
+                <Text style={styles.lastActionLabel}>Last Action:</Text>
                 <Text style={styles.lastActionText} numberOfLines={1}>
                   {lastAction}
                 </Text>
@@ -1027,14 +1027,14 @@ export default function App() {
                 onPress={() =>
                   confirmAction(
                     'RELAY_1',
-                    'মোটর চালু নিশ্চিতকরণ',
-                    'আপনি কি মোটর চালু করার জন্য স্টার্ট পালস দিতে চান?'
+                    'Confirm Motor Start',
+                    'Do you want to send START pulse to turn ON motor?'
                   )
                 }
                 disabled={!espOnline}
               >
                 <Text style={styles.actionButtonIcon}>▶️</Text>
-                <Text style={styles.actionButtonText}>মোটর চালু (START)</Text>
+                <Text style={styles.actionButtonText}>Start Motor (START)</Text>
               </TouchableOpacity>
 
               {/* Stop Motor Button */}
@@ -1047,14 +1047,14 @@ export default function App() {
                 onPress={() =>
                   confirmAction(
                     'RELAY_2',
-                    'মোটর বন্ধ নিশ্চিতকরণ',
-                    'আপনি কি মোটর বন্ধ করার জন্য স্টপ পালস দিতে চান?'
+                    'Confirm Motor Stop',
+                    'Do you want to send STOP pulse to turn OFF motor?'
                   )
                 }
                 disabled={!espOnline}
               >
                 <Text style={styles.actionButtonIcon}>⏹️</Text>
-                <Text style={styles.actionButtonText}>মোটর বন্ধ (STOP)</Text>
+                <Text style={styles.actionButtonText}>Stop Motor (STOP)</Text>
               </TouchableOpacity>
             </View>
 
@@ -1064,23 +1064,23 @@ export default function App() {
               onPress={() =>
                 confirmAction(
                   'RESET',
-                  'সিস্টেম রিসেট',
-                  'আপনি কি সিস্টেম রিসেট পালস পাঠাতে চান?'
+                  'Confirm System Reset',
+                  'Do you want to send system RESET pulse?'
                 )
               }
               disabled={!espOnline}
             >
-              <Text style={styles.resetButtonText}>🔄 সিস্টেম রিসেট (RESET)</Text>
+              <Text style={styles.resetButtonText}>🔄 System Reset (RESET)</Text>
             </TouchableOpacity>
 
             {/* Mode & Automation Settings */}
             <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>⚡ স্বয়ংক্রিয় পাওয়ার কন্ট্রোল</Text>
+              <Text style={styles.sectionTitle}>⚡ Automatic Power Control</Text>
               <View style={styles.switchRow}>
                 <View style={styles.switchTextCol}>
-                  <Text style={styles.switchLabel}>সর্বদা চালু রাখুন (Always ON)</Text>
+                  <Text style={styles.switchLabel}>Always ON (Keep Running)</Text>
                   <Text style={styles.switchDescription}>
-                    বিদ্যুৎ চলে গিয়ে আবার আসলে স্বয়ংক্রিয়ভাবে মোটর চালু করবে
+                    Automatically restarts motor when electricity recovers after outage
                   </Text>
                 </View>
                 <Switch
@@ -1097,43 +1097,43 @@ export default function App() {
 
             {/* Voice Audio Test Section (DFPlayer Mini) */}
             <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>🔊 ভয়েস ও স্পিকার টেস্ট (DFPlayer Mini)</Text>
-              <Text style={styles.sectionDesc}>কন্ট্রোল বক্সের স্পিকারে ভয়েস মেসেজ টেস্ট করুন</Text>
+              <Text style={styles.sectionTitle}>🔊 Voice & Speaker Test (DFPlayer Mini)</Text>
+              <Text style={styles.sectionDesc}>Test voice announcements on control box speaker</Text>
               <View style={styles.audioBtnRow}>
                 <TouchableOpacity
                   style={[styles.audioTestBtn, !espOnline && styles.btnDisabled]}
                   onPress={() => {
                     sendWsCommand('PLAY_AUDIO', { track: 7 });
-                    Alert.alert('অডিও টেস্ট', 'মোটর অন ভয়েস প্লে করা হচ্ছে (006)');
+                    Alert.alert('Audio Test', 'Playing Motor ON voice track (006)');
                   }}
                   disabled={!espOnline}
                 >
                   <Text style={styles.audioTestIcon}>📢</Text>
-                  <Text style={styles.audioTestText}>মোটর অন (006)</Text>
+                  <Text style={styles.audioTestText}>Motor ON (006)</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={[styles.audioTestBtn, !espOnline && styles.btnDisabled]}
                   onPress={() => {
                     sendWsCommand('PLAY_AUDIO', { track: 10 });
-                    Alert.alert('অডিও টেস্ট', 'মোটর অফ ভয়েস প্লে করা হচ্ছে (009)');
+                    Alert.alert('Audio Test', 'Playing Motor OFF voice track (009)');
                   }}
                   disabled={!espOnline}
                 >
                   <Text style={styles.audioTestIcon}>🔈</Text>
-                  <Text style={styles.audioTestText}>মোটর অফ (009)</Text>
+                  <Text style={styles.audioTestText}>Motor OFF (009)</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={[styles.audioTestBtn, !espOnline && styles.btnDisabled]}
                   onPress={() => {
                     sendWsCommand('PLAY_AUDIO', { track: 1 });
-                    Alert.alert('অডিও টেস্ট', 'স্বাগতম ভয়েস প্লে করা হচ্ছে (001)');
+                    Alert.alert('Audio Test', 'Playing Welcome voice track (001)');
                   }}
                   disabled={!espOnline}
                 >
                   <Text style={styles.audioTestIcon}>👋</Text>
-                  <Text style={styles.audioTestText}>স্বাগতম (001)</Text>
+                  <Text style={styles.audioTestText}>Welcome (001)</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1147,7 +1147,7 @@ export default function App() {
             <View style={styles.sectionCard}>
               <View style={styles.sectionHeaderRow}>
                 <Text style={styles.sectionTitle}>
-                  অনুমোদিত মোবাইল নম্বর ({adminPhones.length}/5)
+                  Authorized Admin Numbers ({adminPhones.length}/5)
                 </Text>
                 {adminPhones.length < 5 && (
                   <TouchableOpacity
@@ -1155,7 +1155,7 @@ export default function App() {
                     onPress={() => setIsAddingPhone(!isAddingPhone)}
                   >
                     <Text style={styles.addSmallBtnText}>
-                      {isAddingPhone ? 'বাতিল' : '+ নতুন নম্বর'}
+                      {isAddingPhone ? 'Cancel' : '+ Add Number'}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -1172,13 +1172,13 @@ export default function App() {
                     onChangeText={setNewPhoneInput}
                   />
                   <TouchableOpacity style={styles.confirmAddBtn} onPress={handleAddPhone}>
-                    <Text style={styles.confirmAddBtnText}>যোগ করুন</Text>
+                    <Text style={styles.confirmAddBtnText}>Add</Text>
                   </TouchableOpacity>
                 </View>
               )}
 
               {adminPhones.length === 0 ? (
-                <Text style={styles.emptyNotice}>কোনো নম্বর যুক্ত করা হয়নি।</Text>
+                <Text style={styles.emptyNotice}>No admin numbers added yet.</Text>
               ) : (
                 adminPhones.map((phone, idx) => (
                   <View key={idx} style={styles.phoneItemRow}>
@@ -1199,9 +1199,9 @@ export default function App() {
 
             {/* USSD Code Dial Section */}
             <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>USSD ডায়াল ও ব্যালেন্স চেক</Text>
+              <Text style={styles.sectionTitle}>USSD Dial & Balance Check</Text>
               <Text style={styles.sectionDesc}>
-                সিম কার্ডের ব্যালেন্স ও অফার জানার জন্য ইউএসএসডি কোড ডায়াল করুন
+                Dial USSD code to check SIM balance and telecom offers
               </Text>
 
               {/* Quick USSD Buttons */}
@@ -1235,7 +1235,7 @@ export default function App() {
                   {isDialingUssd ? (
                     <ActivityIndicator color="#fff" size="small" />
                   ) : (
-                    <Text style={styles.ussdDialBtnText}>ডায়াল করুন</Text>
+                    <Text style={styles.ussdDialBtnText}>Dial</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -1244,7 +1244,7 @@ export default function App() {
               {ussdResponse ? (
                 <View style={styles.ussdResponseCard}>
                   <Text style={styles.ussdResponseHeader}>
-                    📩 USSD উত্তর ({ussdResponseCode}):
+                    📩 USSD Response ({ussdResponseCode}):
                   </Text>
                   <Text style={styles.ussdResponseContent}>{ussdResponse}</Text>
                 </View>
@@ -1260,21 +1260,21 @@ export default function App() {
             <View style={styles.sectionCard}>
               <View style={styles.sectionHeaderRow}>
                 <View style={{ flex: 1, paddingRight: 8 }}>
-                  <Text style={styles.sectionTitle}>📊 মোটর অ্যাক্টিভিটি লগ</Text>
-                  <Text style={styles.sectionDesc}>মোটর চলার সময়, বন্ধের সময় ও স্থায়িত্বকাল</Text>
+                  <Text style={styles.sectionTitle}>📊 Motor Activity Log</Text>
+                  <Text style={styles.sectionDesc}>Motor start time, stop time, and run duration</Text>
                 </View>
                 <View style={styles.logHeaderBtns}>
                   <TouchableOpacity
                     style={styles.iconActionBtn}
                     onPress={() => handleLoadLogs(logCurrentPage)}
-                    title="রিলোড"
+                    title="Reload"
                   >
                     <Text style={styles.iconActionBtnText}>🔄</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.iconActionBtn, styles.btnDelAction]}
                     onPress={handleClearAllLogs}
-                    title="সব মুছুন"
+                    title="Clear All"
                   >
                     <Text style={styles.iconActionBtnText}>🗑️</Text>
                   </TouchableOpacity>
@@ -1284,17 +1284,17 @@ export default function App() {
               {/* Stats Bar */}
               <View style={styles.logStatsBar}>
                 <View style={styles.logStatItem}>
-                  <Text style={styles.logStatLabel}>এই পেজে লগ</Text>
-                  <Text style={styles.logStatValue}>{motorLogs.length} টি</Text>
+                  <Text style={styles.logStatLabel}>Logs on Page</Text>
+                  <Text style={styles.logStatValue}>{motorLogs.length}</Text>
                 </View>
                 <View style={styles.logStatDivider} />
                 <View style={styles.logStatItem}>
-                  <Text style={styles.logStatLabel}>মোট পেজ</Text>
-                  <Text style={styles.logStatValue}>{logTotalPages} টি</Text>
+                  <Text style={styles.logStatLabel}>Total Pages</Text>
+                  <Text style={styles.logStatValue}>{logTotalPages}</Text>
                 </View>
                 <View style={styles.logStatDivider} />
                 <View style={styles.logStatItem}>
-                  <Text style={styles.logStatLabel}>বর্তমান পৃষ্ঠা</Text>
+                  <Text style={styles.logStatLabel}>Current Page</Text>
                   <Text style={styles.logStatValue}>#{logCurrentPage + 1}</Text>
                 </View>
               </View>
@@ -1304,18 +1304,18 @@ export default function App() {
             {logLoading ? (
               <View style={styles.logLoadingBox}>
                 <ActivityIndicator size="small" color="#38bdf8" />
-                <Text style={styles.logLoadingText}>লগ ডাটা লোড হচ্ছে...</Text>
+                <Text style={styles.logLoadingText}>Loading log data...</Text>
               </View>
             ) : motorLogs.length === 0 ? (
               <View style={styles.emptyLogCard}>
                 <Text style={styles.emptyLogIcon}>📋</Text>
-                <Text style={styles.emptyLogTitle}>কোনো মোটর অ্যাক্টিভিটি লগ পাওয়া যায়নি</Text>
-                <Text style={styles.emptyLogDesc}>মোটর চললে ও বন্ধ হলে স্বয়ংক্রিয়ভাবে এখানে হিস্ট্রি সংরক্ষিত হবে।</Text>
+                <Text style={styles.emptyLogTitle}>No motor activity logs found</Text>
+                <Text style={styles.emptyLogDesc}>When motor starts and stops, history will be automatically recorded here.</Text>
                 <TouchableOpacity
                   style={styles.loadLogsBtn}
                   onPress={() => handleLoadLogs(0)}
                 >
-                  <Text style={styles.loadLogsBtnText}>🔄 লগ রিলোড করুন</Text>
+                  <Text style={styles.loadLogsBtnText}>🔄 Reload Logs</Text>
                 </TouchableOpacity>
               </View>
             ) : (
@@ -1326,18 +1326,18 @@ export default function App() {
                       <Text style={styles.logNumberBadge}>#{logCurrentPage * 10 + idx + 1}</Text>
                       <View style={styles.durationPill}>
                         <Text style={styles.durationPillIcon}>⏱️</Text>
-                        <Text style={styles.durationPillText}>রান: {log.duration || 'Running'}</Text>
+                        <Text style={styles.durationPillText}>Duration: {log.duration || 'Running'}</Text>
                       </View>
                     </View>
                   </View>
 
                   <View style={styles.activityTimeRow}>
                     <View style={styles.timeBlock}>
-                      <Text style={styles.timeLabelGreen}>🟢 চালু হয়েছিল (ON):</Text>
+                      <Text style={styles.timeLabelGreen}>🟢 Started (ON):</Text>
                       <Text style={styles.timeValue}>{log.onTime || 'N/A'}</Text>
                     </View>
                     <View style={styles.timeBlock}>
-                      <Text style={styles.timeLabelRed}>🔴 বন্ধ হয়েছিল (OFF):</Text>
+                      <Text style={styles.timeLabelRed}>🔴 Stopped (OFF):</Text>
                       <Text style={styles.timeValue}>{log.offTime || 'N/A'}</Text>
                     </View>
                   </View>
@@ -1353,12 +1353,12 @@ export default function App() {
                   disabled={logCurrentPage === 0}
                   onPress={() => handleLoadLogs(Math.max(0, logCurrentPage - 1))}
                 >
-                  <Text style={styles.pageBtnText}>« পূর্ববর্তী</Text>
+                  <Text style={styles.pageBtnText}>« Previous</Text>
                 </TouchableOpacity>
 
                 <View style={styles.pageIndicator}>
                   <Text style={styles.pageIndicatorText}>
-                    পৃষ্ঠা {logCurrentPage + 1} / {logTotalPages}
+                    Page {logCurrentPage + 1} of {logTotalPages}
                   </Text>
                 </View>
 
@@ -1367,7 +1367,7 @@ export default function App() {
                   disabled={logCurrentPage >= logTotalPages - 1}
                   onPress={() => handleLoadLogs(logCurrentPage + 1)}
                 >
-                  <Text style={styles.pageBtnText}>পরবর্তী »</Text>
+                  <Text style={styles.pageBtnText}>Next »</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -1379,18 +1379,18 @@ export default function App() {
           <View>
             <View style={styles.sectionCard}>
               <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionTitle}>⏰ অটোমেশন শিডিউল তালিকা</Text>
+                <Text style={styles.sectionTitle}>⏰ Automation Schedules</Text>
                 <TouchableOpacity
                   style={styles.addSmallBtn}
                   onPress={() => sendWsCommand('GET_SCHEDULES')}
                 >
-                  <Text style={styles.addSmallBtnText}>🔄 রিলোড</Text>
+                  <Text style={styles.addSmallBtnText}>🔄 Reload</Text>
                 </TouchableOpacity>
               </View>
-              <Text style={styles.sectionDesc}>নির্ধারিত সময়ে স্বয়ংক্রিয়ভাবে মোটর চালু ও বন্ধ হবে</Text>
+              <Text style={styles.sectionDesc}>Motor starts and stops automatically at scheduled times</Text>
 
               {schedules.length === 0 ? (
-                <Text style={styles.emptyNotice}>কোনো শিডিউল সংরক্ষিত নেই।</Text>
+                <Text style={styles.emptyNotice}>No schedules found.</Text>
               ) : (
                 schedules.map((s, idx) => (
                   <View key={s._id || idx} style={styles.scheduleItem}>
@@ -1398,7 +1398,7 @@ export default function App() {
                       <Text style={styles.scheduleTime}>
                         ⏰ {s.startTime} - {s.endTime}
                       </Text>
-                      <Text style={styles.scheduleType}>ধরন: {s.type}</Text>
+                      <Text style={styles.scheduleType}>Type: {s.type}</Text>
                     </View>
                     <Switch
                       value={s.isActive}
@@ -1420,21 +1420,21 @@ export default function App() {
           <View>
             {/* Password Change Option */}
             <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>🔒 সিকিউরিটি ও পাসওয়ার্ড</Text>
+              <Text style={styles.sectionTitle}>🔒 Security & Password</Text>
               <Text style={styles.sectionDesc}>
-                MongoDB ডাটাবেজে সংরক্ষিত সিস্টেম পাসওয়ার্ড পরিবর্তন করুন
+                Change system password stored in MongoDB database
               </Text>
               <TouchableOpacity
                 style={styles.changePasswordBtn}
                 onPress={() => setChangePwdVisible(true)}
               >
-                <Text style={styles.changePasswordBtnText}>🔑 পাসওয়ার্ড পরিবর্তন করুন</Text>
+                <Text style={styles.changePasswordBtnText}>🔑 Change Password</Text>
               </TouchableOpacity>
             </View>
 
             {/* Server Info Card */}
             <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>সার্ভার ও সিস্টেম তথ্য</Text>
+              <Text style={styles.sectionTitle}>Server & System Info</Text>
               <View style={styles.infoRow}>
                 <Text style={styles.infoKey}>HTTP Server:</Text>
                 <Text style={styles.infoVal}>{serverUrl}</Text>
@@ -1455,7 +1455,7 @@ export default function App() {
 
             {/* Logout Card */}
             <TouchableOpacity style={styles.bigLogoutBtn} onPress={handleLogout}>
-              <Text style={styles.bigLogoutBtnText}>🚪 লগআউট (Logout)</Text>
+              <Text style={styles.bigLogoutBtnText}>🚪 Log Out</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -1469,7 +1469,7 @@ export default function App() {
         >
           <Text style={styles.navIcon}>⚡</Text>
           <Text style={[styles.navLabel, activeTab === 'control' && styles.navLabelActive]}>
-            কন্ট্রোল
+            Control
           </Text>
         </TouchableOpacity>
 
@@ -1482,7 +1482,7 @@ export default function App() {
         >
           <Text style={styles.navIcon}>📊</Text>
           <Text style={[styles.navLabel, activeTab === 'activity' && styles.navLabelActive]}>
-            অ্যাক্টিভিটি
+            Activity
           </Text>
         </TouchableOpacity>
 
@@ -1492,7 +1492,7 @@ export default function App() {
         >
           <Text style={styles.navIcon}>📶</Text>
           <Text style={[styles.navLabel, activeTab === 'gsm' && styles.navLabelActive]}>
-            সিম/USSD
+            SIM/USSD
           </Text>
         </TouchableOpacity>
 
@@ -1502,7 +1502,7 @@ export default function App() {
         >
           <Text style={styles.navIcon}>⏰</Text>
           <Text style={[styles.navLabel, activeTab === 'schedules' && styles.navLabelActive]}>
-            শিডিউল
+            Schedule
           </Text>
         </TouchableOpacity>
 
@@ -1512,7 +1512,7 @@ export default function App() {
         >
           <Text style={styles.navIcon}>⚙️</Text>
           <Text style={[styles.navLabel, activeTab === 'settings' && styles.navLabelActive]}>
-            সেটিংস
+            Settings
           </Text>
         </TouchableOpacity>
       </View>
@@ -1533,13 +1533,13 @@ export default function App() {
                 style={styles.cancelBtn}
                 onPress={() => setConfirmModalVisible(false)}
               >
-                <Text style={styles.cancelBtnText}>বাতিল</Text>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.confirmBtn}
                 onPress={executePendingAction}
               >
-                <Text style={styles.confirmBtnText}>হ্যাঁ, পাঠান</Text>
+                <Text style={styles.confirmBtnText}>Yes, Send</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1555,12 +1555,12 @@ export default function App() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.pwdModalBox}>
-            <Text style={styles.pwdModalTitle}>পাসওয়ার্ড পরিবর্তন করুন</Text>
-            <Text style={styles.pwdModalDesc}>MongoDB ডাটাবেজে নতুন পাসওয়ার্ড সংরক্ষিত হবে</Text>
+            <Text style={styles.pwdModalTitle}>Change System Password</Text>
+            <Text style={styles.pwdModalDesc}>New password will be securely saved in MongoDB</Text>
 
             <TextInput
               style={styles.pwdInput}
-              placeholder="বর্তমান পাসওয়ার্ড..."
+              placeholder="Current password..."
               placeholderTextColor="#94a3b8"
               secureTextEntry
               value={oldPassword}
@@ -1568,7 +1568,7 @@ export default function App() {
             />
             <TextInput
               style={styles.pwdInput}
-              placeholder="নতুন পাসওয়ার্ড..."
+              placeholder="New password..."
               placeholderTextColor="#94a3b8"
               secureTextEntry
               value={newPassword}
@@ -1576,7 +1576,7 @@ export default function App() {
             />
             <TextInput
               style={styles.pwdInput}
-              placeholder="নতুন পাসওয়ার্ড নিশ্চিত করুন..."
+              placeholder="Confirm new password..."
               placeholderTextColor="#94a3b8"
               secureTextEntry
               value={confirmPassword}
@@ -1589,7 +1589,7 @@ export default function App() {
                 onPress={() => setChangePwdVisible(false)}
                 disabled={changePwdLoading}
               >
-                <Text style={styles.cancelBtnText}>বাতিল</Text>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.confirmBtn}
@@ -1599,7 +1599,7 @@ export default function App() {
                 {changePwdLoading ? (
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
-                  <Text style={styles.confirmBtnText}>সেভ করুন</Text>
+                  <Text style={styles.confirmBtnText}>Save</Text>
                 )}
               </TouchableOpacity>
             </View>
