@@ -90,8 +90,8 @@ const unsigned long wifiCheckInterval = 10000; // Check WiFi every 10 seconds
 #define RELAY_1 25
 #define RELAY_2 26
 #define BUZZER_PIN 13 // Previously relay_3
-#define SWITCH_1 23
-#define SWITCH_2 19 // Moved from 22 to 19 to fix I2C (SDA/SCL) pin conflict
+#define SWITCH_1 18
+#define SWITCH_2 19
 
 // --- GLOBAL VARIABLES ---
 WebSocketsClient webSocket;

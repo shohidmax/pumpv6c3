@@ -72,8 +72,8 @@ const unsigned long wifiCheckInterval = 10000; // Check WiFi every 10 seconds
 #define RELAY_1 25
 #define RELAY_2 26
 #define relay_3 13
-#define SWITCH_1 23
-#define SWITCH_2 22
+#define SWITCH_1 18
+#define SWITCH_2 19
 
 // --- GLOBAL VARIABLES ---
 WebSocketsClient webSocket;
