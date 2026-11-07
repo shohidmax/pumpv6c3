@@ -606,40 +606,41 @@
             return await fetch(endpoint, options);
         }
 
-        // 3. If an active base was already verified, try it first
-        if (activeApiBase) {
-            try {
-                return await fetch(activeApiBase + endpoint, options);
-            } catch (err) {
-                console.warn('Active base unreachable, retrying discovery...');
-                activeApiBase = null;
+        // 3. Local environments (e.g. VS Code Live Server :5500, file://, localhost):
+        // Prioritize http://localhost:3000 where the local node server is actively running!
+        const isLocalEnvironment = window.location.hostname === 'localhost' || 
+                                   window.location.hostname === '127.0.0.1' || 
+                                   window.location.protocol === 'file:';
+
+        const candidates = isLocalEnvironment 
+            ? [LOCAL_SERVER_URL, LIVE_SERVER_URL]
+            : [LIVE_SERVER_URL, LOCAL_SERVER_URL];
+
+        if (activeApiBase && candidates.includes(activeApiBase)) {
+            const idx = candidates.indexOf(activeApiBase);
+            if (idx > 0) {
+                candidates.splice(idx, 1);
+                candidates.unshift(activeApiBase);
             }
         }
 
-        // 4. Try live production server (https://pvrv3.maxapi.esp32.site)
-        try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 2500);
-            const liveRes = await fetch(LIVE_SERVER_URL + endpoint, {
-                ...options,
-                signal: controller.signal
-            });
-            clearTimeout(timeoutId);
-            activeApiBase = LIVE_SERVER_URL;
-            return liveRes;
-        } catch (liveErr) {
-            console.warn('Live server connection failed, trying local server (localhost:3000):', liveErr.message);
+        let lastErr = null;
+        for (const base of candidates) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 2000);
+                const res = await fetch(base + endpoint, {
+                    ...options,
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+                activeApiBase = base;
+                return res;
+            } catch (err) {
+                lastErr = err;
+            }
         }
-
-        // 5. Fallback to local server (http://localhost:3000)
-        try {
-            const localRes = await fetch(LOCAL_SERVER_URL + endpoint, options);
-            activeApiBase = LOCAL_SERVER_URL;
-            return localRes;
-        } catch (localErr) {
-            console.error('All backend connections failed:', localErr.message);
-            throw localErr;
-        }
+        throw lastErr || new Error('Connection failed to all server endpoints');
     }
 
     function getWsEndpoint() {
@@ -762,7 +763,7 @@
             }
         } catch (err) {
             console.error('Login error:', err);
-            errorMessage.textContent = 'সার্ভারের সাথে যোগাযোগ করা যাচ্ছে না। সার্ভার চালু আছে কিনা নিশ্চিত করুন।';
+            errorMessage.textContent = 'সার্ভারের সাথে যোগাযোগ করা যাচ্ছে না (' + (err.message || 'NetworkError') + ')। সার্ভার চালু আছে কিনা নিশ্চিত করুন।';
             errorAlert.classList.remove('hidden');
         } finally {
             submitBtn.disabled = false;
