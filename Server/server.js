@@ -62,18 +62,25 @@ const defaultQuickUssds = [
 ];
 
 const SettingsSchema = new mongoose.Schema({
+    password: { type: String, default: "1234" },
     isAlwaysOn: { type: Boolean, default: false },
     adminPhones: { type: [String], default: [] },
     quickUssds: { type: Array, default: defaultQuickUssds }
 });
 const SystemSettings = mongoose.model('SystemSettings8c', SettingsSchema);
 
+let globalPassword = "1234";
 let globalAlwaysOn = false;
 let globalAdminPhones = [];
 let globalQuickUssds = defaultQuickUssds;
+
 SystemSettings.findOne().then(doc => {
-    if(!doc) { new SystemSettings().save(); }
-    else {
+    if (!doc) {
+        new SystemSettings({ password: "1234" }).save()
+            .then(() => console.log('[SETTINGS] Initialized default settings with password 1234 in MongoDB'))
+            .catch(console.error);
+    } else {
+        if (doc.password) globalPassword = String(doc.password).trim();
         globalAlwaysOn = doc.isAlwaysOn;
         if (doc.adminPhones && Array.isArray(doc.adminPhones)) {
             globalAdminPhones = doc.adminPhones;
@@ -83,73 +90,41 @@ SystemSettings.findOne().then(doc => {
         if (doc.quickUssds && Array.isArray(doc.quickUssds) && doc.quickUssds.length > 0) {
             globalQuickUssds = doc.quickUssds;
         }
+        console.log('[SETTINGS] Loaded from MongoDB. Admin phones:', globalAdminPhones.length);
     }
 }).catch(console.error);
 
-// --- Password Database (file.db) ---
-const FILE_DB_PATH = path.join(__dirname, 'file.db');
-
-function readDbFile() {
-    try {
-        if (!fs.existsSync(FILE_DB_PATH)) {
-            const initialData = { password: "1234", adminPhones: [], updatedAt: new Date().toISOString() };
-            fs.writeFileSync(FILE_DB_PATH, JSON.stringify(initialData, null, 2), 'utf8');
-            console.log('[AUTH] file.db initialized with default password: 1234');
-            return initialData;
-        }
-        const raw = fs.readFileSync(FILE_DB_PATH, 'utf8').trim();
-        try {
-            const parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === 'object') {
-                return parsed;
-            }
-        } catch (e) {
-            if (raw.length > 0) return { password: raw, adminPhones: [] };
-        }
-    } catch (err) {
-        console.error('[AUTH] Error reading file.db:', err);
+async function getPasswordFromDb() {
+    if (mongoose.connection.readyState !== 1) {
+        return globalPassword || "1234";
     }
-    return { password: "1234", adminPhones: [] };
-}
-
-function getPasswordFromFileDb() {
-    const data = readDbFile();
-    return String(data.password || "1234").trim();
-}
-
-function savePasswordToFileDb(newPassword) {
     try {
-        const currentData = readDbFile();
-        currentData.password = String(newPassword).trim();
-        currentData.updatedAt = new Date().toISOString();
-        fs.writeFileSync(FILE_DB_PATH, JSON.stringify(currentData, null, 2), 'utf8');
-        console.log('[AUTH] Password saved to file.db');
+        const doc = await SystemSettings.findOne().maxTimeMS(3000);
+        if (doc && doc.password) {
+            globalPassword = String(doc.password).trim();
+            return globalPassword;
+        }
+    } catch (e) {
+        console.error('[AUTH] MongoDB read error, using cached password:', e.message);
+    }
+    return globalPassword || "1234";
+}
+
+async function savePasswordToDb(newPassword) {
+    const clean = String(newPassword).trim();
+    globalPassword = clean;
+    if (mongoose.connection.readyState !== 1) {
+        console.warn('[AUTH] MongoDB not connected, cached in memory:', clean);
         return true;
-    } catch (err) {
-        console.error('[AUTH] Error writing to file.db:', err);
+    }
+    try {
+        await SystemSettings.findOneAndUpdate({}, { password: clean }, { upsert: true, maxTimeMS: 3000 });
+        console.log('[AUTH] Password saved to MongoDB successfully:', clean);
+        return true;
+    } catch (e) {
+        console.error('[AUTH] Error saving password to MongoDB:', e.message);
         return false;
     }
-}
-
-function savePhonesToFileDb(phones) {
-    try {
-        const currentData = readDbFile();
-        currentData.adminPhones = Array.isArray(phones) ? phones : [];
-        currentData.updatedAt = new Date().toISOString();
-        fs.writeFileSync(FILE_DB_PATH, JSON.stringify(currentData, null, 2), 'utf8');
-        console.log('[AUTH] adminPhones saved to file.db:', currentData.adminPhones);
-        return true;
-    } catch (err) {
-        console.error('[AUTH] Error saving adminPhones to file.db:', err);
-        return false;
-    }
-}
-
-// Load initial adminPhones from file.db if present
-const initialDbData = readDbFile();
-if (Array.isArray(initialDbData.adminPhones) && initialDbData.adminPhones.length > 0) {
-    globalAdminPhones = initialDbData.adminPhones;
-    console.log('[AUTH] Loaded adminPhones from file.db:', globalAdminPhones);
 }
 
 // Active login session tokens
@@ -176,10 +151,10 @@ function isRegisteredPhone(inputPhone) {
 }
 
 // --- Auth REST Endpoints ---
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
     const { password } = req.body || {};
-    const currentPassword = getPasswordFromFileDb();
-    console.log('[AUTH] Login attempt. Received:', password, '| Stored in file.db:', currentPassword);
+    const currentPassword = await getPasswordFromDb();
+    console.log('[AUTH] Login attempt. Received:', password, '| MongoDB password:', currentPassword);
     if (password && String(password).trim() === currentPassword) {
         const token = crypto.randomBytes(24).toString('hex');
         activeSessions.add(token);
@@ -204,9 +179,9 @@ app.post('/api/logout', (req, res) => {
     return res.json({ success: true, message: 'Logged out' });
 });
 
-app.post('/api/change-password', (req, res) => {
+app.post('/api/change-password', async (req, res) => {
     const { oldPassword, newPassword, token } = req.body || {};
-    const currentPassword = getPasswordFromFileDb();
+    const currentPassword = await getPasswordFromDb();
     if (!token || !activeSessions.has(token)) {
         return res.status(401).json({ success: false, message: 'অনুমতি নেই। অনুগ্রহ করে প্রথমে লগইন করুন।' });
     }
@@ -216,13 +191,13 @@ app.post('/api/change-password', (req, res) => {
     if (!newPassword || String(newPassword).trim().length < 3) {
         return res.status(400).json({ success: false, message: 'নতুন পাসওয়ার্ড কমপক্ষে ৩ অক্ষরের হতে হবে।' });
     }
-    if (savePasswordToFileDb(newPassword)) {
-        return res.json({ success: true, message: 'পাসওয়ার্ড সফলভাবে file.db-তে পরিবর্তন করা হয়েছে!' });
+    if (await savePasswordToDb(newPassword)) {
+        return res.json({ success: true, message: 'পাসওয়ার্ড সফলভাবে MongoDB-তে পরিবর্তন করা হয়েছে!' });
     }
     return res.status(500).json({ success: false, message: 'পাসওয়ার্ড সেভ করা যায়নি।' });
 });
 
-app.post('/api/reset-password-by-phone', (req, res) => {
+app.post('/api/reset-password-by-phone', async (req, res) => {
     const { phone, newPassword } = req.body || {};
     if (!phone || !isRegisteredPhone(phone)) {
         return res.status(403).json({
@@ -237,7 +212,7 @@ app.post('/api/reset-password-by-phone', (req, res) => {
         });
     }
     const cleanPass = String(newPassword).trim();
-    if (savePasswordToFileDb(cleanPass)) {
+    if (await savePasswordToDb(cleanPass)) {
         console.log(`[AUTH] Password successfully reset by registered phone: ${phone}`);
         // Notify ESP32 SIM800L to send SMS confirmation to the user
         if (esp32Client && esp32Client.readyState === WebSocket.OPEN) {
@@ -515,7 +490,6 @@ wss.on('connection', (ws) => {
                 if (phoneToAdd.length >= 10 && globalAdminPhones.length < 5) {
                     if (!globalAdminPhones.includes(phoneToAdd)) {
                         globalAdminPhones.push(phoneToAdd);
-                        savePhonesToFileDb(globalAdminPhones);
                         SystemSettings.findOneAndUpdate({}, { adminPhones: globalAdminPhones }, { upsert: true }).catch(console.error);
                         console.log("Admin phone added. Current list:", globalAdminPhones);
                         
@@ -533,7 +507,6 @@ wss.on('connection', (ws) => {
                 const phoneToRemove = String(data.value || "").trim();
                 const initialLen = globalAdminPhones.length;
                 globalAdminPhones = globalAdminPhones.filter(p => p !== phoneToRemove);
-                    savePhonesToFileDb(globalAdminPhones);
                 if (globalAdminPhones.length !== initialLen) {
                     SystemSettings.findOneAndUpdate({}, { adminPhones: globalAdminPhones }, { upsert: true }).catch(console.error);
                     console.log("Admin phone removed. Current list:", globalAdminPhones);
@@ -550,7 +523,6 @@ wss.on('connection', (ws) => {
             } else if (data.command === 'SET_PHONES') {
                 if (Array.isArray(data.value)) {
                     globalAdminPhones = data.value.slice(0, 5).map(p => String(p).trim()).filter(p => p.length >= 10);
-                    savePhonesToFileDb(globalAdminPhones);
                     SystemSettings.findOneAndUpdate({}, { adminPhones: globalAdminPhones }, { upsert: true }).catch(console.error);
                     if (esp32Client && esp32Client.readyState === WebSocket.OPEN) {
                         esp32Client.send(JSON.stringify({ command: 'SET_PHONES', value: globalAdminPhones }));
@@ -565,7 +537,7 @@ wss.on('connection', (ws) => {
                 const senderPhone = data.phone;
                 const newPass = String(data.value || "").trim();
                 if (isRegisteredPhone(senderPhone) && newPass.length >= 3) {
-                    savePasswordToFileDb(newPass);
+                    await savePasswordToDb(newPass);
                     console.log(`[AUTH] Password successfully updated from SMS by registered phone: ${senderPhone}`);
                 } else {
                     console.log(`[AUTH] Rejected SMS password update from unauthorized number: ${senderPhone}`);
@@ -581,7 +553,6 @@ wss.on('connection', (ws) => {
         } else if ((data.type === 'phoneListUpdate' || data.type === 'phoneUpdate') && ws === esp32Client) {
             if (Array.isArray(data.phones || data.payload)) {
                 globalAdminPhones = (data.phones || data.payload).slice(0, 5);
-                savePhonesToFileDb(globalAdminPhones);
             } else if (data.phone) {
                 if (!globalAdminPhones.includes(data.phone) && globalAdminPhones.length < 5) {
                     globalAdminPhones.push(data.phone);

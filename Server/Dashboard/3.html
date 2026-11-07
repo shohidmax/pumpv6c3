@@ -549,7 +549,7 @@
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
                 পাসওয়ার্ড পরিবর্তন করুন
             </h3>
-            <p class="text-xs opacity-70 mb-4">সার্ভারের file.db-তে নতুন পাসওয়ার্ড সংরক্ষিত হবে</p>
+            <p class="text-xs opacity-70 mb-4">সার্ভার ডাটাবেজে নতুন পাসওয়ার্ড সংরক্ষিত হবে</p>
 
             <form onsubmit="handleChangePassword(event)" class="space-y-3">
                 <div class="form-control">
@@ -588,12 +588,14 @@
 
     // --- AUTHENTICATION STATE & LOGIC (pvrv3.maxapi.esp32.site ONLY) ---
     const LIVE_SERVER_URL = 'https://pvrv3.maxapi.esp32.site';
-    const LIVE_WS_URL = 'wss://pvrv3.maxapi.esp32.site';
+    const LIVE_WS_URL = (window.location.protocol === 'http:' || window.location.protocol === 'https:') 
+        ? ((window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host) 
+        : 'wss://pvrv3.maxapi.esp32.site';
 
     let authToken = localStorage.getItem('motor_token') || null;
 
     function getApiUrl(endpoint) {
-        if (window.location.hostname === 'pvrv3.maxapi.esp32.site') {
+        if (window.location.protocol.startsWith('http')) {
             return endpoint;
         }
         return LIVE_SERVER_URL + endpoint;
@@ -605,6 +607,9 @@
     }
 
     function getWsEndpoint() {
+        if (window.location.protocol.startsWith('http')) {
+            return (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host;
+        }
         return LIVE_WS_URL;
     }
 
@@ -846,7 +851,7 @@
             });
             const data = await res.json();
             if (res.ok && data.success) {
-                showToast(data.message || 'পাসওয়ার্ড সফলভাবে file.db-তে পরিবর্তিত হয়েছে!', 'success');
+                showToast(data.message || 'পাসওয়ার্ড সফলভাবে ডাটাবেজে পরিবর্তিত হয়েছে!', 'success');
                 change_pwd_modal.close();
             } else {
                 alertBox.className = 'alert alert-error text-xs py-2';

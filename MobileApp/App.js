@@ -836,7 +836,7 @@ export default function App() {
 
             {/* Mode & Automation Settings */}
             <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>স্বয়ংক্রিয় পাওয়ার এনফোর্সমেন্ট</Text>
+              <Text style={styles.sectionTitle}>⚡ স্বয়ংক্রিয় পাওয়ার কন্ট্রোল</Text>
               <View style={styles.switchRow}>
                 <View style={styles.switchTextCol}>
                   <Text style={styles.switchLabel}>সর্বদা চালু রাখুন (Always ON)</Text>
@@ -853,6 +853,49 @@ export default function App() {
                   trackColor={{ false: '#cbd5e1', true: '#38bdf8' }}
                   thumbColor={isAlwaysOn ? '#0284c7' : '#f1f5f9'}
                 />
+              </View>
+            </View>
+
+            {/* Voice Audio Test Section (DFPlayer Mini) */}
+            <View style={styles.sectionCard}>
+              <Text style={styles.sectionTitle}>🔊 ভয়েস ও স্পিকার টেস্ট (DFPlayer Mini)</Text>
+              <Text style={styles.sectionDesc}>কন্ট্রোল বক্সের স্পিকারে ভয়েস মেসেজ টেস্ট করুন</Text>
+              <View style={styles.audioBtnRow}>
+                <TouchableOpacity
+                  style={[styles.audioTestBtn, !espOnline && styles.btnDisabled]}
+                  onPress={() => {
+                    sendWsCommand('PLAY_AUDIO', { track: 7 });
+                    Alert.alert('অডিও টেস্ট', 'মোটর অন ভয়েস প্লে করা হচ্ছে (006)');
+                  }}
+                  disabled={!espOnline}
+                >
+                  <Text style={styles.audioTestIcon}>📢</Text>
+                  <Text style={styles.audioTestText}>মোটর অন (006)</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.audioTestBtn, !espOnline && styles.btnDisabled]}
+                  onPress={() => {
+                    sendWsCommand('PLAY_AUDIO', { track: 10 });
+                    Alert.alert('অডিও টেস্ট', 'মোটর অফ ভয়েস প্লে করা হচ্ছে (009)');
+                  }}
+                  disabled={!espOnline}
+                >
+                  <Text style={styles.audioTestIcon}>🔈</Text>
+                  <Text style={styles.audioTestText}>মোটর অফ (009)</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.audioTestBtn, !espOnline && styles.btnDisabled]}
+                  onPress={() => {
+                    sendWsCommand('PLAY_AUDIO', { track: 1 });
+                    Alert.alert('অডিও টেস্ট', 'স্বাগতম ভয়েস প্লে করা হচ্ছে (001)');
+                  }}
+                  disabled={!espOnline}
+                >
+                  <Text style={styles.audioTestIcon}>👋</Text>
+                  <Text style={styles.audioTestText}>স্বাগতম (001)</Text>
+                </TouchableOpacity>
               </View>
             </View>
           </View>
@@ -1026,9 +1069,9 @@ export default function App() {
           <View>
             {/* Password Change Option */}
             <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>সিকিউরিটি ও পাসওয়ার্ড</Text>
+              <Text style={styles.sectionTitle}>🔒 সিকিউরিটি ও পাসওয়ার্ড</Text>
               <Text style={styles.sectionDesc}>
-                সার্ভারের file.db-তে সংরক্ষিত পাসওয়ার্ড পরিবর্তন করুন
+                MongoDB ডাটাবেজে সংরক্ষিত সিস্টেম পাসওয়ার্ড পরিবর্তন করুন
               </Text>
               <TouchableOpacity
                 style={styles.changePasswordBtn}
@@ -1149,7 +1192,7 @@ export default function App() {
         <View style={styles.modalOverlay}>
           <View style={styles.pwdModalBox}>
             <Text style={styles.pwdModalTitle}>পাসওয়ার্ড পরিবর্তন করুন</Text>
-            <Text style={styles.pwdModalDesc}>সার্ভারের file.db-তে নতুন পাসওয়ার্ড সংরক্ষিত হবে</Text>
+            <Text style={styles.pwdModalDesc}>MongoDB ডাটাবেজে নতুন পাসওয়ার্ড সংরক্ষিত হবে</Text>
 
             <TextInput
               style={styles.pwdInput}
@@ -1629,6 +1672,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     paddingVertical: 12,
+  },
+  audioBtnRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+  },
+  audioTestBtn: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  audioTestIcon: {
+    fontSize: 20,
+    marginBottom: 4,
+  },
+  audioTestText: {
+    color: '#38bdf8',
+    fontSize: 10,
+    fontWeight: '700',
+    textAlign: 'center',
   },
 
   // GSM Phone List Styles

@@ -170,7 +170,8 @@
         const LIVE_SERVER_URL = 'https://pvrv3.maxapi.esp32.site';
 
         function getApiUrl(endpoint) {
-            if (window.location.hostname === 'pvrv3.maxapi.esp32.site') {
+            // When accessed via browser http/https (e.g. localhost or live domain), use relative path to avoid CORS issues
+            if (window.location.protocol.startsWith('http')) {
                 return endpoint;
             }
             return LIVE_SERVER_URL + endpoint;
