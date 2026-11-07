@@ -588,20 +588,50 @@
 
     // --- AUTHENTICATION STATE & LOGIC ---
     let authToken = localStorage.getItem('motor_token') || null;
+    let detectedWorkingHost = localStorage.getItem('motor_api_host') || null;
 
-    function getApiBase() {
-        if (window.location.protocol === 'file:') {
-            return 'https://pvrv3.maxapi.esp32.site';
+    async function apiFetch(endpoint, options = {}) {
+        const candidates = [];
+        if (detectedWorkingHost) candidates.push(detectedWorkingHost);
+        if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+            candidates.push(''); // same origin (e.g. localhost:3000 or pvrv3.maxapi.esp32.site)
         }
-        return '';
+        candidates.push('http://localhost:3000');
+        candidates.push('https://pvrv3.maxapi.esp32.site');
+
+        const uniqueCandidates = [...new Set(candidates)];
+        let lastError = null;
+
+        for (const base of uniqueCandidates) {
+            try {
+                const targetUrl = base + endpoint;
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 4000);
+                const reqOptions = { ...options, signal: controller.signal };
+                const res = await fetch(targetUrl, reqOptions);
+                clearTimeout(timeoutId);
+                detectedWorkingHost = base;
+                localStorage.setItem('motor_api_host', base);
+                return res;
+            } catch (err) {
+                lastError = err;
+            }
+        }
+        throw lastError || new Error('Connection failed');
     }
 
     function getWsEndpoint() {
+        if (detectedWorkingHost && detectedWorkingHost.startsWith('http://localhost:3000')) {
+            return 'ws://localhost:3000';
+        }
+        if (detectedWorkingHost && detectedWorkingHost.includes('maxapi.esp32.site')) {
+            return 'wss://pvrv3.maxapi.esp32.site';
+        }
         if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             return `${wsProtocol}//${window.location.host}`;
         }
-        return 'wss://pvrv3.maxapi.esp32.site';
+        return 'ws://localhost:3000';
     }
 
     async function checkAuthOnLoad() {
@@ -610,7 +640,7 @@
             return;
         }
         try {
-            const res = await fetch(getApiBase() + '/api/verify', {
+            const res = await apiFetch('/api/verify', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ token: authToken })
@@ -677,7 +707,7 @@
         btnSpinner.classList.remove('hidden');
 
         try {
-            const res = await fetch(getApiBase() + '/api/login', {
+            const res = await apiFetch('/api/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ password })
@@ -712,7 +742,7 @@
     async function handleDashboardLogout() {
         if (authToken) {
             try {
-                await fetch(getApiBase() + '/api/logout', {
+                await apiFetch('/api/logout', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ token: authToken })
@@ -783,7 +813,7 @@
         alertBox.classList.add('hidden');
 
         try {
-            const res = await fetch(getApiBase() + '/api/reset-password-by-phone', {
+            const res = await apiFetch('/api/reset-password-by-phone', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ phone, newPassword })
@@ -835,7 +865,7 @@
         saveBtn.textContent = 'সেভ হচ্ছে...';
 
         try {
-            const res = await fetch(getApiBase() + '/api/change-password', {
+            const res = await apiFetch('/api/change-password', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ oldPassword, newPassword, token: authToken })
