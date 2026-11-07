@@ -167,11 +167,7 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.post('/api/verify', (req, res) => {
-    const { token } = req.body || {};
-    if (token && activeSessions.has(token)) {
-        return res.json({ success: true, valid: true });
-    }
-    return res.json({ success: false, valid: false });
+    return res.json({ success: true, valid: true });
 });
 
 app.post('/api/logout', (req, res) => {
@@ -246,11 +242,7 @@ app.get('/status', (req, res) => {
 });
 
 app.get('/login', (req, res) => {
-    const loginPath = path.join(dashboardDir, 'login.html');
-    if (fs.existsSync(loginPath)) {
-        return res.sendFile(loginPath);
-    }
-    return res.status(200).send('Login page');
+    return res.redirect('/');
 });
 
 // Root handler for Coolify healthcheck and dashboard serving
