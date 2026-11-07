@@ -103,7 +103,7 @@ function readDbFile() {
 
 function getPasswordFromFileDb() {
     const data = readDbFile();
-    return data.password || "1234";
+    return String(data.password || "1234").trim();
 }
 
 function savePasswordToFileDb(newPassword) {
@@ -168,6 +168,7 @@ function isRegisteredPhone(inputPhone) {
 app.post('/api/login', (req, res) => {
     const { password } = req.body || {};
     const currentPassword = getPasswordFromFileDb();
+    console.log('[AUTH] Login attempt. Received:', password, '| Stored in file.db:', currentPassword);
     if (password && String(password).trim() === currentPassword) {
         const token = crypto.randomBytes(24).toString('hex');
         activeSessions.add(token);

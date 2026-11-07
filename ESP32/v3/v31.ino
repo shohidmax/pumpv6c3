@@ -57,8 +57,8 @@ String decodeUSSD(String raw);
 #define DFPLAYER_BAUD 9600
 
 #define AUDIO_CALL_ANSWER 1 // 001.mp3 - Call Received / Greeting prompt
-#define AUDIO_MOTOR_ON    5 // 006.mp3 - Motor ON Audio
-#define AUDIO_MOTOR_OFF   8 // 009.mp3 - Motor OFF Audio
+#define AUDIO_MOTOR_ON    7 // 006.mp3 - Motor ON Audio
+#define AUDIO_MOTOR_OFF   10 // 009.mp3 - Motor OFF Audio
 
 // --- AUDIO TRACK LENGTHS / DURATIONS (in milliseconds) ---
 // অডিও ফাইলের দৈর্ঘ্য অনুযায়ী সময় (মিলি-সেকেন্ডে)

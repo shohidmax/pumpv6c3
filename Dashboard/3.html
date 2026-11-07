@@ -589,13 +589,28 @@
     // --- AUTHENTICATION STATE & LOGIC ---
     let authToken = localStorage.getItem('motor_token') || null;
 
+    function getApiBase() {
+        if (window.location.protocol === 'file:') {
+            return 'https://pvrv3.maxapi.esp32.site';
+        }
+        return '';
+    }
+
+    function getWsEndpoint() {
+        if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            return `${wsProtocol}//${window.location.host}`;
+        }
+        return 'wss://pvrv3.maxapi.esp32.site';
+    }
+
     async function checkAuthOnLoad() {
         if (!authToken) {
             showLoginScreen();
             return;
         }
         try {
-            const res = await fetch('/api/verify', {
+            const res = await fetch(getApiBase() + '/api/verify', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ token: authToken })
@@ -662,7 +677,7 @@
         btnSpinner.classList.remove('hidden');
 
         try {
-            const res = await fetch('/api/login', {
+            const res = await fetch(getApiBase() + '/api/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ password })
@@ -697,7 +712,7 @@
     async function handleDashboardLogout() {
         if (authToken) {
             try {
-                await fetch('/api/logout', {
+                await fetch(getApiBase() + '/api/logout', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ token: authToken })
@@ -768,7 +783,7 @@
         alertBox.classList.add('hidden');
 
         try {
-            const res = await fetch('/api/reset-password-by-phone', {
+            const res = await fetch(getApiBase() + '/api/reset-password-by-phone', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ phone, newPassword })
@@ -820,7 +835,7 @@
         saveBtn.textContent = 'সেভ হচ্ছে...';
 
         try {
-            const res = await fetch('/api/change-password', {
+            const res = await fetch(getApiBase() + '/api/change-password', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ oldPassword, newPassword, token: authToken })
@@ -888,7 +903,7 @@
     }
 
     function connect() {
-        const wsUrl = 'wss://pvrv3.maxapi.esp32.site';
+        const wsUrl = getWsEndpoint();
         ws = new WebSocket(wsUrl);
         
         ws.onopen = () => { 
