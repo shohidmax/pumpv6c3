@@ -14,6 +14,8 @@ import {
   Switch,
   RefreshControl,
   Platform,
+  Animated,
+  Easing,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -95,6 +97,101 @@ export default function App() {
 
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
+
+  // Motor Animation Values (Gear Spin & Glow Pulse like Web Dashboard)
+  const spinValue = useRef(new Animated.Value(0)).current;
+  const pulseValue = useRef(new Animated.Value(1)).current;
+  const glowOpacity = useRef(new Animated.Value(0.3)).current;
+  const [motorRunSeconds, setMotorRunSeconds] = useState(0);
+
+  useEffect(() => {
+    let spinAnim = null;
+    let pulseAnim = null;
+    let glowAnim = null;
+    let timer = null;
+
+    if (motorStatus === 'ON') {
+      spinValue.setValue(0);
+      spinAnim = Animated.loop(
+        Animated.timing(spinValue, {
+          toValue: 1,
+          duration: 1200,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        })
+      );
+      spinAnim.start();
+
+      pulseValue.setValue(1);
+      pulseAnim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseValue, {
+            toValue: 1.15,
+            duration: 800,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseValue, {
+            toValue: 1.0,
+            duration: 800,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulseAnim.start();
+
+      glowAnim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(glowOpacity, {
+            toValue: 0.8,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(glowOpacity, {
+            toValue: 0.25,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      glowAnim.start();
+
+      timer = setInterval(() => {
+        setMotorRunSeconds((prev) => prev + 1);
+      }, 1000);
+    } else {
+      spinValue.stopAnimation();
+      spinValue.setValue(0);
+      pulseValue.stopAnimation();
+      pulseValue.setValue(1);
+      glowOpacity.stopAnimation();
+      glowOpacity.setValue(0);
+      setMotorRunSeconds(0);
+    }
+
+    return () => {
+      if (spinAnim) spinAnim.stop();
+      if (pulseAnim) pulseAnim.stop();
+      if (glowAnim) glowAnim.stop();
+      if (timer) clearInterval(timer);
+    };
+  }, [motorStatus]);
+
+  const spinInterpolation = spinValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  const formatElapsedTime = (totalSecs) => {
+    const hrs = Math.floor(totalSecs / 3600);
+    const mins = Math.floor((totalSecs % 3600) / 60);
+    const secs = totalSecs % 60;
+    if (hrs > 0) {
+      return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
 
   // 1. Initial Load: Check Auth
   useEffect(() => {
@@ -799,26 +896,119 @@ export default function App() {
         {/* ----------------- TAB 1: CONTROL ----------------- */}
         {activeTab === 'control' && (
           <View>
-            {/* Big Motor Status Card */}
+            {/* Animated Motor Status Hero Card (Styled & Animated like Web Dashboard) */}
             <View
               style={[
                 styles.motorCard,
                 motorStatus === 'ON' ? styles.motorCardRunning : styles.motorCardStopped,
               ]}
             >
-              <Text style={styles.motorCardLabel}>বর্তমান মোটর অবস্থা</Text>
-              <Text style={styles.motorCardStatus}>
-                {motorStatus === 'ON' ? 'MOTOR RUNNING' : 'MOTOR STOPPED'}
-              </Text>
-
-              <View style={styles.motorMetaRow}>
-                <Text style={styles.motorMetaText}>মোড: {systemMode}</Text>
-                <Text style={styles.motorMetaDivider}>•</Text>
-                <Text style={styles.motorMetaText}>WiFi: {wifiSignal}%</Text>
+              {/* Card Header Bar */}
+              <View style={styles.motorCardHeader}>
+                <Text style={styles.motorCardLabel}>MOTOR CONTROL CENTER</Text>
+                <View
+                  style={[
+                    styles.modePillBadge,
+                    systemMode === 'Normal' ? styles.modeNormal : styles.modeEmergency,
+                  ]}
+                >
+                  <Text style={styles.modePillText}>{systemMode} Mode</Text>
+                </View>
               </View>
 
+              {/* Central Animated Spinning Gear & Pulsing Aura */}
+              <View style={styles.animCenterContainer}>
+                {/* Glowing Aura Ring when Running */}
+                {motorStatus === 'ON' && (
+                  <Animated.View
+                    style={[
+                      styles.glowAura,
+                      {
+                        transform: [{ scale: pulseValue }],
+                        opacity: glowOpacity,
+                      },
+                    ]}
+                  />
+                )}
+
+                {/* Rotating Gear Motor Icon (like web dashboard's 1s linear spin) */}
+                <Animated.View
+                  style={[
+                    styles.gearContainer,
+                    motorStatus === 'ON' ? styles.gearRunning : styles.gearStopped,
+                    { transform: [{ rotate: spinInterpolation }] },
+                  ]}
+                >
+                  {/* 8 Cog Teeth around the circumference */}
+                  <View style={[styles.cogTooth, { transform: [{ rotate: '0deg' }] }]} />
+                  <View style={[styles.cogTooth, { transform: [{ rotate: '45deg' }] }]} />
+                  <View style={[styles.cogTooth, { transform: [{ rotate: '90deg' }] }]} />
+                  <View style={[styles.cogTooth, { transform: [{ rotate: '135deg' }] }]} />
+
+                  {/* Inner Ring */}
+                  <View style={styles.gearInnerRing}>
+                    {/* Center Core Hub */}
+                    <View
+                      style={[
+                        styles.gearCenterHub,
+                        motorStatus === 'ON' ? styles.hubRunning : styles.hubStopped,
+                      ]}
+                    >
+                      <Text style={styles.hubIconText}>
+                        {motorStatus === 'ON' ? '⚡' : '⚙️'}
+                      </Text>
+                    </View>
+                  </View>
+                </Animated.View>
+
+                {/* Status Typography */}
+                <View style={styles.animStatusTextCol}>
+                  <View style={styles.statusPillRow}>
+                    <View
+                      style={[
+                        styles.statusDotLg,
+                        { backgroundColor: motorStatus === 'ON' ? '#4ade80' : '#f87171' },
+                      ]}
+                    />
+                    <Text style={styles.motorCardStatus}>
+                      {motorStatus === 'ON' ? 'মোটর চলছে (ON)' : 'মোটর বন্ধ (OFF)'}
+                    </Text>
+                  </View>
+
+                  {motorStatus === 'ON' ? (
+                    <View style={styles.runningTimerBadge}>
+                      <Text style={styles.timerIcon}>⏱️</Text>
+                      <Text style={styles.timerText}>চলছে: {formatElapsedTime(motorRunSeconds)}</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.motorSubtitleText}>সিস্টেম প্রস্তুত রয়েছে</Text>
+                  )}
+                </View>
+              </View>
+
+              {/* Meta details bar */}
+              <View style={styles.motorMetaRow}>
+                <View style={styles.metaCol}>
+                  <Text style={styles.metaKey}>WiFi সিগন্যাল</Text>
+                  <Text style={styles.metaVal}>📶 {wifiSignal}%</Text>
+                </View>
+                <View style={styles.metaDivider} />
+                <View style={styles.metaCol}>
+                  <Text style={styles.metaKey}>ডিভাইস আইপি</Text>
+                  <Text style={styles.metaVal}>{localIP}</Text>
+                </View>
+                <View style={styles.metaDivider} />
+                <View style={styles.metaCol}>
+                  <Text style={styles.metaKey}>সার্ভার স্টেটাস</Text>
+                  <Text style={[styles.metaVal, { color: wsConnected ? '#4ade80' : '#f87171' }]}>
+                    {wsConnected ? 'কানেক্টেড' : 'ডিসকানেক্ট'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Last Action Bar */}
               <View style={styles.lastActionBox}>
-                <Text style={styles.lastActionLabel}>শেষ অ্যাকশন:</Text>
+                <Text style={styles.lastActionLabel}>সর্বশেষ অবস্থা:</Text>
                 <Text style={styles.lastActionText} numberOfLines={1}>
                   {lastAction}
                 </Text>
@@ -1441,6 +1631,7 @@ const styles = StyleSheet.create({
   loginContainer: {
     flex: 1,
     backgroundColor: '#f1f5f9',
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 28) + 16 : 16,
   },
   loginScroll: {
     flexGrow: 1,
@@ -1619,16 +1810,22 @@ const styles = StyleSheet.create({
   mainContainer: {
     flex: 1,
     backgroundColor: '#0f172a',
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 28) + 12 : 12,
   },
   appBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     backgroundColor: '#1e293b',
     borderBottomWidth: 1,
     borderBottomColor: '#334155',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   appBarTitle: {
     fontSize: 20,
@@ -1684,60 +1881,224 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
   },
 
-  // Motor Status Card
+  // Animated Motor Status Hero Card
   motorCard: {
     borderRadius: 24,
-    padding: 24,
-    alignItems: 'center',
+    padding: 20,
     marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 6,
   },
   motorCardRunning: {
     backgroundColor: '#15803d',
+    borderWidth: 1.5,
+    borderColor: '#4ade80',
   },
   motorCardStopped: {
-    backgroundColor: '#dc2626',
+    backgroundColor: '#1e293b',
+    borderWidth: 1.5,
+    borderColor: '#dc2626',
+  },
+  motorCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 12,
   },
   motorCardLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: 'rgba(255,255,255,0.8)',
+    fontSize: 12,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.85)',
     textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 1.2,
   },
-  motorCardStatus: {
-    fontSize: 32,
-    fontWeight: '900',
+  modePillBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  modeNormal: {
+    backgroundColor: 'rgba(34, 197, 94, 0.25)',
+    borderWidth: 1,
+    borderColor: '#4ade80',
+  },
+  modeEmergency: {
+    backgroundColor: 'rgba(239, 68, 68, 0.25)',
+    borderWidth: 1,
+    borderColor: '#f87171',
+  },
+  modePillText: {
     color: '#ffffff',
-    marginVertical: 12,
-    textAlign: 'center',
+    fontSize: 11,
+    fontWeight: '800',
   },
-  motorMetaRow: {
+
+  // Central Animation Visual
+  animCenterContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    marginVertical: 10,
+    width: '100%',
+    gap: 16,
+    position: 'relative',
+  },
+  glowAura: {
+    position: 'absolute',
+    left: -4,
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    backgroundColor: '#4ade80',
+    shadowColor: '#4ade80',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  gearContainer: {
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+  },
+  gearRunning: {
+    borderColor: '#4ade80',
+    backgroundColor: '#064e3b',
+  },
+  gearStopped: {
+    borderColor: '#f87171',
+    backgroundColor: '#450a0a',
+  },
+  cogTooth: {
+    position: 'absolute',
+    width: 86,
+    height: 12,
+    backgroundColor: '#4ade80',
+    borderRadius: 3,
+    opacity: 0.75,
+  },
+  gearInnerRing: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  gearCenterHub: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  hubRunning: {
+    backgroundColor: '#10b981',
+  },
+  hubStopped: {
+    backgroundColor: '#dc2626',
+  },
+  hubIconText: {
+    fontSize: 18,
+  },
+
+  animStatusTextCol: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  statusPillRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  motorMetaText: {
-    fontSize: 13,
+  statusDotLg: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  motorCardStatus: {
+    fontSize: 20,
+    fontWeight: '900',
     color: '#ffffff',
+  },
+  runningTimerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    marginTop: 6,
+    alignSelf: 'flex-start',
+    gap: 4,
+  },
+  timerIcon: {
+    fontSize: 12,
+  },
+  timerText: {
+    color: '#38bdf8',
+    fontSize: 13,
+    fontWeight: '800',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  motorSubtitleText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 12,
+    marginTop: 4,
     fontWeight: '600',
   },
-  motorMetaDivider: {
-    color: 'rgba(255,255,255,0.6)',
+
+  // Meta Row & Last Action
+  motorMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    borderRadius: 12,
+    paddingVertical: 10,
+    marginTop: 10,
+  },
+  metaCol: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  metaKey: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '600',
+  },
+  metaVal: {
+    fontSize: 12,
+    color: '#ffffff',
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  metaDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: 'rgba(255,255,255,0.2)',
   },
   lastActionBox: {
-    marginTop: 16,
-    backgroundColor: 'rgba(0,0,0,0.2)',
+    marginTop: 12,
+    backgroundColor: 'rgba(0,0,0,0.3)',
     paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    maxWidth: '100%',
   },
   lastActionLabel: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#f8fafc',
   },
   lastActionText: {
