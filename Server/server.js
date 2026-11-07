@@ -3,10 +3,15 @@ const WebSocket = require('ws');
 const http = require('http');
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 const mongoose = require('mongoose');
 
 const app = express();
 const server = http.createServer(app);
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // --- MongoDB Setup ---
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/motor_data8c";
@@ -70,6 +75,94 @@ SystemSettings.findOne().then(doc => {
     }
 }).catch(console.error);
 
+// --- Password Database (file.db) ---
+const FILE_DB_PATH = path.join(__dirname, 'file.db');
+
+function getPasswordFromFileDb() {
+    try {
+        if (!fs.existsSync(FILE_DB_PATH)) {
+            const initialData = { password: "1234", updatedAt: new Date().toISOString() };
+            fs.writeFileSync(FILE_DB_PATH, JSON.stringify(initialData, null, 2), 'utf8');
+            console.log('[AUTH] file.db initialized with default password: 1234');
+            return "1234";
+        }
+        const raw = fs.readFileSync(FILE_DB_PATH, 'utf8').trim();
+        try {
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed.password === 'string') {
+                return parsed.password;
+            }
+        } catch (e) {
+            // Plain text password in file.db
+            if (raw.length > 0) return raw;
+        }
+    } catch (err) {
+        console.error('[AUTH] Error reading file.db:', err);
+    }
+    return "1234";
+}
+
+function savePasswordToFileDb(newPassword) {
+    try {
+        const data = { password: String(newPassword).trim(), updatedAt: new Date().toISOString() };
+        fs.writeFileSync(FILE_DB_PATH, JSON.stringify(data, null, 2), 'utf8');
+        console.log('[AUTH] Password saved to file.db');
+        return true;
+    } catch (err) {
+        console.error('[AUTH] Error writing to file.db:', err);
+        return false;
+    }
+}
+
+// Active login session tokens
+const activeSessions = new Set();
+
+// --- Auth REST Endpoints ---
+app.post('/api/login', (req, res) => {
+    const { password } = req.body || {};
+    const currentPassword = getPasswordFromFileDb();
+    if (password && String(password).trim() === currentPassword) {
+        const token = crypto.randomBytes(24).toString('hex');
+        activeSessions.add(token);
+        console.log('[AUTH] Successful login. Token issued.');
+        return res.json({ success: true, token, message: 'লগইন সফল হয়েছে।' });
+    }
+    console.log('[AUTH] Failed login attempt with password:', password);
+    return res.status(401).json({ success: false, message: 'ভুল পাসওয়ার্ড! আবার চেষ্টা করুন।' });
+});
+
+app.post('/api/verify', (req, res) => {
+    const { token } = req.body || {};
+    if (token && activeSessions.has(token)) {
+        return res.json({ success: true, valid: true });
+    }
+    return res.json({ success: false, valid: false });
+});
+
+app.post('/api/logout', (req, res) => {
+    const { token } = req.body || {};
+    if (token) activeSessions.delete(token);
+    return res.json({ success: true, message: 'Logged out' });
+});
+
+app.post('/api/change-password', (req, res) => {
+    const { oldPassword, newPassword, token } = req.body || {};
+    const currentPassword = getPasswordFromFileDb();
+    if (!token || !activeSessions.has(token)) {
+        return res.status(401).json({ success: false, message: 'অনুমতি নেই। অনুগ্রহ করে প্রথমে লগইন করুন।' });
+    }
+    if (String(oldPassword).trim() !== currentPassword) {
+        return res.status(400).json({ success: false, message: 'বর্তমান পাসওয়ার্ডটি সঠিক নয়।' });
+    }
+    if (!newPassword || String(newPassword).trim().length < 3) {
+        return res.status(400).json({ success: false, message: 'নতুন পাসওয়ার্ড কমপক্ষে ৩ অক্ষরের হতে হবে।' });
+    }
+    if (savePasswordToFileDb(newPassword)) {
+        return res.json({ success: true, message: 'পাসওয়ার্ড সফলভাবে file.db-তে পরিবর্তন করা হয়েছে!' });
+    }
+    return res.status(500).json({ success: false, message: 'পাসওয়ার্ড সেভ করা যায়নি।' });
+});
+
 // --- Static Files ---
 // Serve files from the sibling 'Dashboard' directory
 app.use(express.static(path.join(__dirname, '../Dashboard')));
@@ -78,9 +171,13 @@ app.get('/status', (req, res) => {
     res.send('server is running');
 });
 
-// Explicit root handler as requested
+app.get('/login', (req, res) => {
+    res.sendFile(path.join(__dirname, '../Dashboard/login.html'));
+});
+
+// Root handler serves index.html (with login protection)
 app.get('/', (req, res) => {
-    res.send('server is running ...');
+    res.sendFile(path.join(__dirname, '../Dashboard/index.html'));
 });
 
 const wss = new WebSocket.Server({ server });

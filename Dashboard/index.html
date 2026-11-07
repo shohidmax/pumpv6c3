@@ -20,18 +20,95 @@
             transform-origin: center; /* Ensure it spins around its center */
             transform-box: fill-box;
         }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-6px); }
+            40%, 80% { transform: translateX(6px); }
+        }
+        .shake-anim {
+            animation: shake 0.4s ease-in-out;
+        }
     </style>
 </head>
 <body class="bg-base-100">
 
-    <div class="drawer drawer-end">
+    <!-- ========================================== -->
+    <!-- PASSWORD PROTECTED LOGIN SCREEN            -->
+    <!-- ========================================== -->
+    <div id="loginScreen" class="min-h-screen bg-gradient-to-br from-base-200 via-base-100 to-base-300 flex items-center justify-center p-4">
+        <div class="card w-full max-w-md bg-base-100 shadow-2xl border border-base-300 transition-all duration-300" id="loginCard">
+            <div class="card-body p-6 sm:p-8">
+                <!-- Branding Header -->
+                <div class="text-center mb-6">
+                    <div class="inline-flex p-4 rounded-2xl bg-primary/10 text-primary mb-3 shadow-inner">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        </svg>
+                    </div>
+                    <h1 class="text-2xl sm:text-3xl font-black tracking-tight text-base-content">মুঠো-সেচ কন্ট্রোলার</h1>
+                    <p class="text-xs font-bold uppercase tracking-wider text-primary mt-1">Smart Motor Control Panel</p>
+                    <p class="text-xs sm:text-sm opacity-70 mt-2">মোটর কন্ট্রোল প্যানেলে প্রবেশ করতে পাসওয়ার্ড দিন</p>
+                </div>
+
+                <!-- Login Form -->
+                <form id="dashboardLoginForm" onsubmit="handleDashboardLogin(event)" class="space-y-4">
+                    <div class="form-control">
+                        <label class="label py-1">
+                            <span class="label-text font-bold text-sm">সিস্টেম পাসওয়ার্ড (Password)</span>
+                        </label>
+                        <div class="relative">
+                            <input 
+                                type="password" 
+                                id="loginPasswordInput" 
+                                placeholder="পাসওয়ার্ড লিখুন..." 
+                                class="input input-bordered w-full pr-11 font-medium focus:input-primary" 
+                                required 
+                                autofocus 
+                                autocomplete="current-password"
+                            />
+                            <button 
+                                type="button" 
+                                onclick="togglePasswordVisibility('loginPasswordInput', 'loginEyeIcon')" 
+                                class="absolute inset-y-0 right-0 pr-3 flex items-center text-base-content/60 hover:text-primary transition-colors"
+                                title="পাসওয়ার্ড দেখুন/লুকান"
+                            >
+                                <svg id="loginEyeIcon" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Error Alert -->
+                    <div id="loginErrorAlert" class="alert alert-error text-xs py-2.5 hidden flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-4 w-4" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        <span id="loginErrorMessage">ভুল পাসওয়ার্ড! আবার চেষ্টা করুন।</span>
+                    </div>
+
+                    <button type="submit" id="loginSubmitBtn" class="btn btn-primary w-full shadow-lg font-bold gap-2 text-base">
+                        <span id="loginBtnText">লগইন করে প্রবেশ করুন</span>
+                        <span id="loginBtnSpinner" class="loading loading-spinner loading-sm hidden"></span>
+                    </button>
+                </form>
+
+                <div class="divider my-4 text-xs opacity-50">MUTHO-SECH SYSTEM</div>
+                <p class="text-center text-xs opacity-60">ডিফল্ট পাসওয়ার্ড: <span class="badge badge-sm badge-ghost font-mono">1234</span></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MOTOR CONTROL DASHBOARD (PROTECTED)       -->
+    <!-- ========================================== -->
+    <div id="mainDashboardApp" class="drawer drawer-end hidden">
         <input id="settings-drawer" type="checkbox" class="drawer-toggle" />
         <div class="drawer-content flex flex-col justify-between min-h-screen">
             
             <!-- Navbar -->
             <div class="navbar bg-base-200 shadow-lg">
                 <div class="flex-1">
-                    <h1 class="text-xl sm:text-2xl font-bold px-4">TODO</h1>
+                    <h1 class="text-xl sm:text-2xl font-bold px-4">মুঠো-সেচ কন্ট্রোলার</h1>
                 </div>
                 <div class="flex-none gap-2 items-center">
                     <div id="connectionStatus" class="badge badge-md sm:badge-lg badge-warning">Connecting...</div>
@@ -43,6 +120,19 @@
                            <path id="wifi-arc-2" d="M5,11 a9,9 0 0 1 14,0" class="text-gray-400 transition-colors duration-300" stroke="currentColor"/>
                            <path id="wifi-arc-3" d="M1.5,7.5 a13,13 0 0 1 21,0" class="text-gray-400 transition-colors duration-300" stroke="currentColor"/>
                         </svg>
+                    </div>
+
+                    <!-- User Account / Logout Dropdown -->
+                    <div class="dropdown dropdown-end">
+                        <label tabindex="0" class="btn btn-sm btn-ghost gap-1.5 px-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                            <span class="hidden sm:inline text-xs font-semibold">Admin</span>
+                        </label>
+                        <ul tabindex="0" class="dropdown-content z-[20] menu p-2 shadow-2xl bg-base-100 rounded-box w-52 border border-base-300 mt-2">
+                            <li><a onclick="openChangePasswordModal()"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg> পাসওয়ার্ড পরিবর্তন</a></li>
+                            <div class="divider my-1"></div>
+                            <li><a onclick="handleDashboardLogout()" class="text-error font-semibold"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg> লগআউট (Logout)</a></li>
+                        </ul>
                     </div>
 
                     <label for="settings-drawer" class="btn btn-square btn-ghost drawer-button">
@@ -371,6 +461,42 @@
         </div>
     </dialog>
 
+    <!-- Change Password Modal -->
+    <dialog id="change_pwd_modal" class="modal modal-bottom sm:modal-middle">
+        <div class="modal-box border border-base-300">
+            <h3 class="font-bold text-lg flex items-center gap-2 text-primary">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
+                পাসওয়ার্ড পরিবর্তন করুন
+            </h3>
+            <p class="text-xs opacity-70 mb-4">সার্ভারের file.db-তে নতুন পাসওয়ার্ড সংরক্ষিত হবে</p>
+
+            <form onsubmit="handleChangePassword(event)" class="space-y-3">
+                <div class="form-control">
+                    <label class="label py-1"><span class="label-text text-xs font-semibold">বর্তমান পাসওয়ার্ড (Old Password)</span></label>
+                    <input type="password" id="oldPasswordInput" placeholder="বর্তমান পাসওয়ার্ড লিখুন..." class="input input-bordered input-sm" required />
+                </div>
+                <div class="form-control">
+                    <label class="label py-1"><span class="label-text text-xs font-semibold">নতুন পাসওয়ার্ড (New Password)</span></label>
+                    <input type="password" id="newPasswordInput" placeholder="নতুন পাসওয়ার্ড লিখুন..." class="input input-bordered input-sm" required minlength="3" />
+                </div>
+                <div class="form-control">
+                    <label class="label py-1"><span class="label-text text-xs font-semibold">নতুন পাসওয়ার্ড নিশ্চিত করুন (Confirm)</span></label>
+                    <input type="password" id="confirmNewPasswordInput" placeholder="নতুন পাসওয়ার্ড আবার লিখুন..." class="input input-bordered input-sm" required minlength="3" />
+                </div>
+
+                <div id="changePwdAlert" class="alert text-xs py-2 hidden">
+                    <span id="changePwdMsg"></span>
+                </div>
+
+                <div class="modal-action mt-4">
+                    <button type="button" onclick="change_pwd_modal.close()" class="btn btn-sm btn-ghost">বাতিল</button>
+                    <button type="submit" id="savePwdBtn" class="btn btn-sm btn-primary">পাসওয়ার্ড সেভ করুন</button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
 <script>
     let ws;
     let pendingAction = null;
@@ -378,6 +504,186 @@
     let currentLogs = [];
     let logCurrentPage = 0;
     let logTotalPages = 1;
+
+    // --- AUTHENTICATION STATE & LOGIC ---
+    let authToken = localStorage.getItem('motor_token') || null;
+
+    async function checkAuthOnLoad() {
+        if (!authToken) {
+            showLoginScreen();
+            return;
+        }
+        try {
+            const res = await fetch('/api/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: authToken })
+            });
+            const data = await res.json();
+            if (data && data.valid) {
+                showDashboard();
+                connect();
+            } else {
+                localStorage.removeItem('motor_token');
+                authToken = null;
+                showLoginScreen();
+            }
+        } catch (e) {
+            // Server offline or network error; keep on login screen
+            showLoginScreen();
+        }
+    }
+
+    function showLoginScreen() {
+        const login = document.getElementById('loginScreen');
+        const dash = document.getElementById('mainDashboardApp');
+        if (login) login.classList.remove('hidden');
+        if (dash) dash.classList.add('hidden');
+        setTimeout(() => {
+            const pwdInput = document.getElementById('loginPasswordInput');
+            if (pwdInput) pwdInput.focus();
+        }, 100);
+    }
+
+    function showDashboard() {
+        const login = document.getElementById('loginScreen');
+        const dash = document.getElementById('mainDashboardApp');
+        if (login) login.classList.add('hidden');
+        if (dash) dash.classList.remove('hidden');
+    }
+
+    function togglePasswordVisibility(inputId, iconId) {
+        const input = document.getElementById(inputId);
+        const icon = document.getElementById(iconId);
+        if (!input) return;
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />';
+        } else {
+            input.type = 'password';
+            icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />';
+        }
+    }
+
+    async function handleDashboardLogin(event) {
+        event.preventDefault();
+        const password = document.getElementById('loginPasswordInput').value;
+        const submitBtn = document.getElementById('loginSubmitBtn');
+        const btnText = document.getElementById('loginBtnText');
+        const btnSpinner = document.getElementById('loginBtnSpinner');
+        const errorAlert = document.getElementById('loginErrorAlert');
+        const errorMessage = document.getElementById('loginErrorMessage');
+        const loginCard = document.getElementById('loginCard');
+
+        errorAlert.classList.add('hidden');
+        submitBtn.disabled = true;
+        btnText.textContent = 'যাচাই করা হচ্ছে...';
+        btnSpinner.classList.remove('hidden');
+
+        try {
+            const res = await fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password })
+            });
+            const data = await res.json();
+
+            if (res.ok && data.success && data.token) {
+                authToken = data.token;
+                localStorage.setItem('motor_token', authToken);
+                document.getElementById('loginPasswordInput').value = '';
+                showDashboard();
+                connect();
+                showToast('সফলভাবে লগইন হয়েছে!', 'success');
+            } else {
+                errorMessage.textContent = (data && data.message) ? data.message : 'ভুল পাসওয়ার্ড! আবার চেষ্টা করুন।';
+                errorAlert.classList.remove('hidden');
+                loginCard.classList.remove('shake-anim');
+                void loginCard.offsetWidth;
+                loginCard.classList.add('shake-anim');
+                document.getElementById('loginPasswordInput').select();
+            }
+        } catch (err) {
+            errorMessage.textContent = 'সার্ভারের সাথে যোগাযোগ করা যাচ্ছে না।';
+            errorAlert.classList.remove('hidden');
+        } finally {
+            submitBtn.disabled = false;
+            btnText.textContent = 'লগইন করে প্রবেশ করুন';
+            btnSpinner.classList.add('hidden');
+        }
+    }
+
+    async function handleDashboardLogout() {
+        if (authToken) {
+            try {
+                await fetch('/api/logout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: authToken })
+                });
+            } catch (e) {}
+        }
+        localStorage.removeItem('motor_token');
+        authToken = null;
+        if (ws) {
+            try { ws.close(); } catch (e) {}
+            ws = null;
+        }
+        showLoginScreen();
+        showToast('লগআউট সম্পন্ন হয়েছে', 'info');
+    }
+
+    function openChangePasswordModal() {
+        document.getElementById('oldPasswordInput').value = '';
+        document.getElementById('newPasswordInput').value = '';
+        document.getElementById('confirmNewPasswordInput').value = '';
+        document.getElementById('changePwdAlert').classList.add('hidden');
+        change_pwd_modal.showModal();
+    }
+
+    async function handleChangePassword(event) {
+        event.preventDefault();
+        const oldPassword = document.getElementById('oldPasswordInput').value;
+        const newPassword = document.getElementById('newPasswordInput').value;
+        const confirmNewPassword = document.getElementById('confirmNewPasswordInput').value;
+        const alertBox = document.getElementById('changePwdAlert');
+        const alertMsg = document.getElementById('changePwdMsg');
+        const saveBtn = document.getElementById('savePwdBtn');
+
+        if (newPassword !== confirmNewPassword) {
+            alertBox.className = 'alert alert-error text-xs py-2';
+            alertMsg.textContent = 'নতুন পাসওয়ার্ড দুটি মিলছে না!';
+            alertBox.classList.remove('hidden');
+            return;
+        }
+
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'সেভ হচ্ছে...';
+
+        try {
+            const res = await fetch('/api/change-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ oldPassword, newPassword, token: authToken })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                showToast(data.message || 'পাসওয়ার্ড সফলভাবে file.db-তে পরিবর্তিত হয়েছে!', 'success');
+                change_pwd_modal.close();
+            } else {
+                alertBox.className = 'alert alert-error text-xs py-2';
+                alertMsg.textContent = (data && data.message) ? data.message : 'ত্রুটি হয়েছে!';
+                alertBox.classList.remove('hidden');
+            }
+        } catch (e) {
+            alertBox.className = 'alert alert-error text-xs py-2';
+            alertMsg.textContent = 'সার্ভার ত্রুটি। আবার চেষ্টা করুন।';
+            alertBox.classList.remove('hidden');
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'পাসওয়ার্ড সেভ করুন';
+        }
+    }
 
     // ... (Existing Theme & Toast Logic) ...
     const themeToggle = document.getElementById('theme-toggle');
@@ -430,7 +736,11 @@
             updateStatus('connectionStatus', 'Server Connected', 'badge-info'); 
             const urlParams = new URLSearchParams(window.location.search);
             const devMac = urlParams.get('mac');
-            const identifyPayload = devMac ? { type: 'web-identify', macAddress: devMac } : { type: 'web-identify' };
+            const identifyPayload = { 
+                type: 'web-identify', 
+                token: authToken, 
+                ...(devMac ? { macAddress: devMac } : {}) 
+            };
             ws.send(JSON.stringify(identifyPayload));
             sendCommand('GET_ALWAYS_ON');
             sendCommand('GET_SCHEDULES');
@@ -478,7 +788,7 @@
         ws.onclose = () => {
             updateStatus('connectionStatus', 'Disconnected', 'badge-error');
             document.querySelectorAll('.control-btn, .control-input').forEach(el => el.disabled = true);
-            setTimeout(connect, 3000);
+            if (authToken) setTimeout(connect, 3000);
         };
         ws.onerror = (error) => { ws.close(); };
     }
@@ -1079,7 +1389,8 @@
     const originalSend = WebSocket.prototype.send;
     // Actually better to just call it on open: (implemented in connect() open event)
     
-    connect();
+    // Authenticate first, then connect WebSocket
+    checkAuthOnLoad();
 </script>
 </body>
 </html>
