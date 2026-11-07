@@ -163,21 +163,35 @@ app.post('/api/change-password', (req, res) => {
     return res.status(500).json({ success: false, message: 'পাসওয়ার্ড সেভ করা যায়নি।' });
 });
 
-// --- Static Files ---
-// Serve files from the sibling 'Dashboard' directory
-app.use(express.static(path.join(__dirname, '../Dashboard')));
+// --- Static Files & Dashboard Resolution ---
+// Check both ./Dashboard (inside Docker/Server root) and ../Dashboard (local repo root)
+let dashboardDir = path.join(__dirname, 'Dashboard');
+if (!fs.existsSync(dashboardDir)) {
+    dashboardDir = path.join(__dirname, '../Dashboard');
+}
+console.log('[STATIC] Serving dashboard from:', dashboardDir);
+
+app.use(express.static(dashboardDir));
 
 app.get('/status', (req, res) => {
-    res.send('server is running');
+    res.status(200).send('server is running');
 });
 
 app.get('/login', (req, res) => {
-    res.sendFile(path.join(__dirname, '../Dashboard/login.html'));
+    const loginPath = path.join(dashboardDir, 'login.html');
+    if (fs.existsSync(loginPath)) {
+        return res.sendFile(loginPath);
+    }
+    return res.status(200).send('Login page');
 });
 
-// Root handler serves index.html (with login protection)
+// Root handler for Coolify healthcheck and dashboard serving
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, '../Dashboard/index.html'));
+    const indexPath = path.join(dashboardDir, 'index.html');
+    if (fs.existsSync(indexPath)) {
+        return res.sendFile(indexPath);
+    }
+    return res.status(200).send('server is running ...');
 });
 
 const wss = new WebSocket.Server({ server });
