@@ -69,6 +69,9 @@ export default function App() {
   // History Logs & Schedules
   const [schedules, setSchedules] = useState([]);
   const [motorLogs, setMotorLogs] = useState([]);
+  const [logCurrentPage, setLogCurrentPage] = useState(0);
+  const [logTotalPages, setLogTotalPages] = useState(1);
+  const [logLoading, setLogLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   // Change Password Modal
@@ -217,7 +220,12 @@ export default function App() {
           if (data.payload.wifiSignal !== undefined) setWifiSignal(data.payload.wifiSignal);
           if (data.payload.localIP !== undefined) setLocalIP(data.payload.localIP);
           if (data.payload.version !== undefined) setFirmwareVersion(data.payload.version);
-          if (data.payload.lastAction !== undefined) setLastAction(data.payload.lastAction);
+          if (data.payload.lastAction !== undefined) {
+            setLastAction(data.payload.lastAction);
+            if (data.payload.lastAction.includes('Logs Cleared')) {
+              setMotorLogs([]);
+            }
+          }
         }
         break;
 
@@ -255,8 +263,25 @@ export default function App() {
         break;
 
       case 'logPageUpdate':
-        if (data.payload && Array.isArray(data.payload.logs)) {
-          setMotorLogs(data.payload.logs);
+        setLogLoading(false);
+        if (data.payload) {
+          const rawLogs = data.payload.motorLogs || data.payload.logs || [];
+          const parsedList = [];
+          if (Array.isArray(rawLogs)) {
+            rawLogs.forEach((item) => {
+              try {
+                const parsed = typeof item === 'string' ? JSON.parse(item) : item;
+                if (parsed && (parsed.onTime || parsed.offTime || parsed.duration)) {
+                  parsedList.push(parsed);
+                }
+              } catch (e) {
+                console.warn('Could not parse log item:', item);
+              }
+            });
+          }
+          setMotorLogs(parsedList);
+          if (data.payload.currentPage !== undefined) setLogCurrentPage(data.payload.currentPage);
+          if (data.payload.totalPages !== undefined) setLogTotalPages(data.payload.totalPages || 1);
         }
         break;
 
@@ -492,6 +517,30 @@ export default function App() {
     setUssdResponse('');
     setUssdResponseCode(code);
     sendWsCommand('DIAL_USSD', code);
+  };
+
+  // 7. Motor Activity Log Actions
+  const handleLoadLogs = (page = 0) => {
+    setLogLoading(true);
+    sendWsCommand('GET_LOG_PAGE', page);
+  };
+
+  const handleClearAllLogs = () => {
+    Alert.alert(
+      'সব লগ মুছে ফেলবেন?',
+      'আপনি কি নিশ্চিত যে সার্ভার থেকে সমস্ত মোটর রান লগ মুছে ফেলতে চান?',
+      [
+        { text: 'বাতিল', style: 'cancel' },
+        {
+          text: 'হ্যাঁ, মুছুন',
+          style: 'destructive',
+          onPress: () => {
+            sendWsCommand('CLEAR_LOGS');
+            setMotorLogs([]);
+          },
+        },
+      ]
+    );
   };
 
   // Pull to refresh
@@ -1014,12 +1063,142 @@ export default function App() {
           </View>
         )}
 
-        {/* ----------------- TAB 3: SCHEDULES & LOGS ----------------- */}
-        {activeTab === 'logs' && (
+        {/* ----------------- TAB 2: MOTOR ACTIVITY LOG ----------------- */}
+        {activeTab === 'activity' && (
           <View>
-            {/* Automation Schedules */}
+            {/* Header with Title & Action Buttons */}
             <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>অটোমেশন শিডিউল তালিকা</Text>
+              <View style={styles.sectionHeaderRow}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={styles.sectionTitle}>📊 মোটর অ্যাক্টিভিটি লগ</Text>
+                  <Text style={styles.sectionDesc}>মোটর চলার সময়, বন্ধের সময় ও স্থায়িত্বকাল</Text>
+                </View>
+                <View style={styles.logHeaderBtns}>
+                  <TouchableOpacity
+                    style={styles.iconActionBtn}
+                    onPress={() => handleLoadLogs(logCurrentPage)}
+                    title="রিলোড"
+                  >
+                    <Text style={styles.iconActionBtnText}>🔄</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.iconActionBtn, styles.btnDelAction]}
+                    onPress={handleClearAllLogs}
+                    title="সব মুছুন"
+                  >
+                    <Text style={styles.iconActionBtnText}>🗑️</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Stats Bar */}
+              <View style={styles.logStatsBar}>
+                <View style={styles.logStatItem}>
+                  <Text style={styles.logStatLabel}>এই পেজে লগ</Text>
+                  <Text style={styles.logStatValue}>{motorLogs.length} টি</Text>
+                </View>
+                <View style={styles.logStatDivider} />
+                <View style={styles.logStatItem}>
+                  <Text style={styles.logStatLabel}>মোট পেজ</Text>
+                  <Text style={styles.logStatValue}>{logTotalPages} টি</Text>
+                </View>
+                <View style={styles.logStatDivider} />
+                <View style={styles.logStatItem}>
+                  <Text style={styles.logStatLabel}>বর্তমান পৃষ্ঠা</Text>
+                  <Text style={styles.logStatValue}>#{logCurrentPage + 1}</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Logs List */}
+            {logLoading ? (
+              <View style={styles.logLoadingBox}>
+                <ActivityIndicator size="small" color="#38bdf8" />
+                <Text style={styles.logLoadingText}>লগ ডাটা লোড হচ্ছে...</Text>
+              </View>
+            ) : motorLogs.length === 0 ? (
+              <View style={styles.emptyLogCard}>
+                <Text style={styles.emptyLogIcon}>📋</Text>
+                <Text style={styles.emptyLogTitle}>কোনো মোটর অ্যাক্টিভিটি লগ পাওয়া যায়নি</Text>
+                <Text style={styles.emptyLogDesc}>মোটর চললে ও বন্ধ হলে স্বয়ংক্রিয়ভাবে এখানে হিস্ট্রি সংরক্ষিত হবে।</Text>
+                <TouchableOpacity
+                  style={styles.loadLogsBtn}
+                  onPress={() => handleLoadLogs(0)}
+                >
+                  <Text style={styles.loadLogsBtnText}>🔄 লগ রিলোড করুন</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              motorLogs.map((log, idx) => (
+                <View key={idx} style={styles.activityLogCard}>
+                  <View style={styles.activityLogHeader}>
+                    <View style={styles.activityLogBadgeRow}>
+                      <Text style={styles.logNumberBadge}>#{logCurrentPage * 10 + idx + 1}</Text>
+                      <View style={styles.durationPill}>
+                        <Text style={styles.durationPillIcon}>⏱️</Text>
+                        <Text style={styles.durationPillText}>রান: {log.duration || 'Running'}</Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <View style={styles.activityTimeRow}>
+                    <View style={styles.timeBlock}>
+                      <Text style={styles.timeLabelGreen}>🟢 চালু হয়েছিল (ON):</Text>
+                      <Text style={styles.timeValue}>{log.onTime || 'N/A'}</Text>
+                    </View>
+                    <View style={styles.timeBlock}>
+                      <Text style={styles.timeLabelRed}>🔴 বন্ধ হয়েছিল (OFF):</Text>
+                      <Text style={styles.timeValue}>{log.offTime || 'N/A'}</Text>
+                    </View>
+                  </View>
+                </View>
+              ))
+            )}
+
+            {/* Pagination Controls */}
+            {motorLogs.length > 0 && (
+              <View style={styles.paginationRow}>
+                <TouchableOpacity
+                  style={[styles.pageBtn, logCurrentPage === 0 && styles.btnDisabled]}
+                  disabled={logCurrentPage === 0}
+                  onPress={() => handleLoadLogs(Math.max(0, logCurrentPage - 1))}
+                >
+                  <Text style={styles.pageBtnText}>« পূর্ববর্তী</Text>
+                </TouchableOpacity>
+
+                <View style={styles.pageIndicator}>
+                  <Text style={styles.pageIndicatorText}>
+                    পৃষ্ঠা {logCurrentPage + 1} / {logTotalPages}
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.pageBtn, logCurrentPage >= logTotalPages - 1 && styles.btnDisabled]}
+                  disabled={logCurrentPage >= logTotalPages - 1}
+                  onPress={() => handleLoadLogs(logCurrentPage + 1)}
+                >
+                  <Text style={styles.pageBtnText}>পরবর্তী »</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* ----------------- TAB 4: SCHEDULES ----------------- */}
+        {activeTab === 'schedules' && (
+          <View>
+            <View style={styles.sectionCard}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>⏰ অটোমেশন শিডিউল তালিকা</Text>
+                <TouchableOpacity
+                  style={styles.addSmallBtn}
+                  onPress={() => sendWsCommand('GET_SCHEDULES')}
+                >
+                  <Text style={styles.addSmallBtnText}>🔄 রিলোড</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.sectionDesc}>নির্ধারিত সময়ে স্বয়ংক্রিয়ভাবে মোটর চালু ও বন্ধ হবে</Text>
+
               {schedules.length === 0 ? (
                 <Text style={styles.emptyNotice}>কোনো শিডিউল সংরক্ষিত নেই।</Text>
               ) : (
@@ -1036,27 +1215,9 @@ export default function App() {
                       onValueChange={() =>
                         sendWsCommand('TOGGLE_SCHEDULE', { id: s._id, isActive: !s.isActive })
                       }
+                      trackColor={{ false: '#cbd5e1', true: '#38bdf8' }}
+                      thumbColor={s.isActive ? '#0284c7' : '#f1f5f9'}
                     />
-                  </View>
-                ))
-              )}
-            </View>
-
-            {/* Run Logs */}
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>রিসেন্ট মোটর রান লগ</Text>
-              {motorLogs.length === 0 ? (
-                <Text style={styles.emptyNotice}>কোনো লগ পাওয়া যায়নি।</Text>
-              ) : (
-                motorLogs.map((log, idx) => (
-                  <View key={log._id || idx} style={styles.logItem}>
-                    <View style={styles.logLeft}>
-                      <Text style={styles.logDate}>{log.bdDate || 'Date: N/A'}</Text>
-                      <Text style={styles.logTime}>শুরু: {log.bdTime || 'N/A'}</Text>
-                    </View>
-                    <View style={styles.logRight}>
-                      <Text style={styles.logDuration}>{log.duration || 'Running'}</Text>
-                    </View>
                   </View>
                 ))
               )}
@@ -1064,7 +1225,7 @@ export default function App() {
           </View>
         )}
 
-        {/* ----------------- TAB 4: SETTINGS ----------------- */}
+        {/* ----------------- TAB 5: SETTINGS ----------------- */}
         {activeTab === 'settings' && (
           <View>
             {/* Password Change Option */}
@@ -1110,7 +1271,7 @@ export default function App() {
         )}
       </ScrollView>
 
-      {/* Bottom Navigation Tab Bar */}
+      {/* Bottom Navigation Tab Bar (5 Clean Tabs) */}
       <View style={styles.bottomNav}>
         <TouchableOpacity
           style={[styles.navTab, activeTab === 'control' && styles.navTabActive]}
@@ -1123,21 +1284,34 @@ export default function App() {
         </TouchableOpacity>
 
         <TouchableOpacity
+          style={[styles.navTab, activeTab === 'activity' && styles.navTabActive]}
+          onPress={() => {
+            setActiveTab('activity');
+            handleLoadLogs(0);
+          }}
+        >
+          <Text style={styles.navIcon}>📊</Text>
+          <Text style={[styles.navLabel, activeTab === 'activity' && styles.navLabelActive]}>
+            অ্যাক্টিভিটি
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={[styles.navTab, activeTab === 'gsm' && styles.navTabActive]}
           onPress={() => setActiveTab('gsm')}
         >
           <Text style={styles.navIcon}>📶</Text>
           <Text style={[styles.navLabel, activeTab === 'gsm' && styles.navLabelActive]}>
-            সিম / USSD
+            সিম/USSD
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.navTab, activeTab === 'logs' && styles.navTabActive]}
-          onPress={() => setActiveTab('logs')}
+          style={[styles.navTab, activeTab === 'schedules' && styles.navTabActive]}
+          onPress={() => setActiveTab('schedules')}
         >
-          <Text style={styles.navIcon}>📋</Text>
-          <Text style={[styles.navLabel, activeTab === 'logs' && styles.navLabelActive]}>
+          <Text style={styles.navIcon}>⏰</Text>
+          <Text style={[styles.navLabel, activeTab === 'schedules' && styles.navLabelActive]}>
             শিডিউল
           </Text>
         </TouchableOpacity>
@@ -1874,38 +2048,216 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     marginTop: 2,
   },
-  logItem: {
+  // Motor Activity Log Styles
+  logHeaderBtns: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  iconActionBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: '#0f172a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  iconActionBtnText: {
+    fontSize: 16,
+  },
+  btnDelAction: {
+    borderColor: '#ef4444',
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+  },
+  logStatsBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    paddingVertical: 10,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  logStatItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  logStatLabel: {
+    fontSize: 10,
+    color: '#94a3b8',
+    fontWeight: '600',
+  },
+  logStatValue: {
+    fontSize: 13,
+    color: '#38bdf8',
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  logStatDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#334155',
+  },
+  logLoadingBox: {
+    paddingVertical: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  logLoadingText: {
+    color: '#94a3b8',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  emptyLogCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderStyle: 'dashed',
+    marginVertical: 12,
+  },
+  emptyLogIcon: {
+    fontSize: 40,
+    marginBottom: 8,
+  },
+  emptyLogTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#ffffff',
+    textAlign: 'center',
+  },
+  emptyLogDesc: {
+    fontSize: 12,
+    color: '#94a3b8',
+    textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  loadLogsBtn: {
+    backgroundColor: '#0284c7',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 14,
+  },
+  loadLogsBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  activityLogCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  activityLogHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 10,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(51, 65, 85, 0.6)',
+  },
+  activityLogBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  logNumberBadge: {
     backgroundColor: '#0f172a',
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 8,
-  },
-  logLeft: {
-    flex: 1,
-  },
-  logDate: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#f8fafc',
-  },
-  logTime: {
-    fontSize: 11,
     color: '#94a3b8',
-    marginTop: 2,
+    fontSize: 11,
+    fontWeight: '800',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#334155',
   },
-  logRight: {
-    backgroundColor: '#334155',
+  durationPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(56, 189, 248, 0.15)',
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: 20,
+    gap: 4,
   },
-  logDuration: {
+  durationPillIcon: {
+    fontSize: 12,
+  },
+  durationPillText: {
     color: '#38bdf8',
     fontSize: 12,
     fontWeight: '800',
+  },
+  activityTimeRow: {
+    gap: 6,
+  },
+  timeBlock: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  timeLabelGreen: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#22c55e',
+  },
+  timeLabelRed: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#ef4444',
+  },
+  timeValue: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#f8fafc',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  paginationRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 20,
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  pageBtn: {
+    backgroundColor: '#0f172a',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  pageBtnText: {
+    color: '#38bdf8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  pageIndicator: {
+    paddingHorizontal: 12,
+  },
+  pageIndicatorText: {
+    color: '#f8fafc',
+    fontSize: 12,
+    fontWeight: '700',
   },
 
   // Settings Styles
