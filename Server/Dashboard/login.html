@@ -168,18 +168,55 @@
 
     <script>
         const LIVE_SERVER_URL = 'https://pvrv3.maxapi.esp32.site';
-
-        function getApiUrl(endpoint) {
-            // When accessed via browser http/https (e.g. localhost or live domain), use relative path to avoid CORS issues
-            if (window.location.protocol.startsWith('http')) {
-                return endpoint;
-            }
-            return LIVE_SERVER_URL + endpoint;
-        }
+        const LOCAL_SERVER_URL = 'http://localhost:3000';
+        let activeApiBase = null;
 
         async function apiFetch(endpoint, options = {}) {
-            const url = getApiUrl(endpoint);
-            return await fetch(url, options);
+            // 1. Direct host match: production
+            if (window.location.hostname === 'pvrv3.maxapi.esp32.site') {
+                activeApiBase = 'https://pvrv3.maxapi.esp32.site';
+                return await fetch(endpoint, options);
+            }
+
+            // 2. Direct host match: local server port 3000
+            if ((window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && window.location.port === '3000') {
+                activeApiBase = 'http://localhost:3000';
+                return await fetch(endpoint, options);
+            }
+
+            // 3. If an active base was already verified, try it first
+            if (activeApiBase) {
+                try {
+                    return await fetch(activeApiBase + endpoint, options);
+                } catch (err) {
+                    activeApiBase = null;
+                }
+            }
+
+            // 4. Try live production server (https://pvrv3.maxapi.esp32.site)
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 2500);
+                const liveRes = await fetch(LIVE_SERVER_URL + endpoint, {
+                    ...options,
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+                activeApiBase = LIVE_SERVER_URL;
+                return liveRes;
+            } catch (liveErr) {
+                console.warn('Live server connection failed, trying local server (localhost:3000):', liveErr.message);
+            }
+
+            // 5. Fallback to local server (http://localhost:3000)
+            try {
+                const localRes = await fetch(LOCAL_SERVER_URL + endpoint, options);
+                activeApiBase = LOCAL_SERVER_URL;
+                return localRes;
+            } catch (localErr) {
+                console.error('All backend connections failed:', localErr.message);
+                throw localErr;
+            }
         }
 
         // Check if already authenticated
@@ -236,7 +273,12 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ password })
                 });
-                const data = await res.json();
+                let data = {};
+                try {
+                    data = await res.json();
+                } catch (jsonErr) {
+                    console.warn('Login response was not JSON:', jsonErr);
+                }
 
                 if (res.ok && data.success && data.token) {
                     localStorage.setItem('motor_token', data.token);
@@ -251,7 +293,8 @@
                     document.getElementById('passwordInput').select();
                 }
             } catch (err) {
-                errorMessage.textContent = 'সার্ভারের সাথে যোগাযোগ করা যাচ্ছে না।';
+                console.error('Login error:', err);
+                errorMessage.textContent = 'সার্ভারের সাথে যোগাযোগ করা যাচ্ছে না। সার্ভার চালু আছে কিনা নিশ্চিত করুন।';
                 errorAlert.classList.remove('hidden');
             } finally {
                 submitBtn.disabled = false;

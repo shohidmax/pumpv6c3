@@ -586,31 +586,73 @@
     let logCurrentPage = 0;
     let logTotalPages = 1;
 
-    // --- AUTHENTICATION STATE & LOGIC (pvrv3.maxapi.esp32.site ONLY) ---
+    // --- AUTHENTICATION STATE & LOGIC ---
     const LIVE_SERVER_URL = 'https://pvrv3.maxapi.esp32.site';
-    const LIVE_WS_URL = (window.location.protocol === 'http:' || window.location.protocol === 'https:') 
-        ? ((window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host) 
-        : 'wss://pvrv3.maxapi.esp32.site';
+    const LOCAL_SERVER_URL = 'http://localhost:3000';
+    let activeApiBase = null;
 
     let authToken = localStorage.getItem('motor_token') || null;
 
-    function getApiUrl(endpoint) {
-        if (window.location.protocol.startsWith('http')) {
-            return endpoint;
-        }
-        return LIVE_SERVER_URL + endpoint;
-    }
-
     async function apiFetch(endpoint, options = {}) {
-        const url = getApiUrl(endpoint);
-        return await fetch(url, options);
+        // 1. Direct host match: production
+        if (window.location.hostname === 'pvrv3.maxapi.esp32.site') {
+            activeApiBase = 'https://pvrv3.maxapi.esp32.site';
+            return await fetch(endpoint, options);
+        }
+
+        // 2. Direct host match: local server port 3000
+        if ((window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && window.location.port === '3000') {
+            activeApiBase = 'http://localhost:3000';
+            return await fetch(endpoint, options);
+        }
+
+        // 3. If an active base was already verified, try it first
+        if (activeApiBase) {
+            try {
+                return await fetch(activeApiBase + endpoint, options);
+            } catch (err) {
+                console.warn('Active base unreachable, retrying discovery...');
+                activeApiBase = null;
+            }
+        }
+
+        // 4. Try live production server (https://pvrv3.maxapi.esp32.site)
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 2500);
+            const liveRes = await fetch(LIVE_SERVER_URL + endpoint, {
+                ...options,
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            activeApiBase = LIVE_SERVER_URL;
+            return liveRes;
+        } catch (liveErr) {
+            console.warn('Live server connection failed, trying local server (localhost:3000):', liveErr.message);
+        }
+
+        // 5. Fallback to local server (http://localhost:3000)
+        try {
+            const localRes = await fetch(LOCAL_SERVER_URL + endpoint, options);
+            activeApiBase = LOCAL_SERVER_URL;
+            return localRes;
+        } catch (localErr) {
+            console.error('All backend connections failed:', localErr.message);
+            throw localErr;
+        }
     }
 
     function getWsEndpoint() {
-        if (window.location.protocol.startsWith('http')) {
-            return (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host;
+        if (window.location.hostname === 'pvrv3.maxapi.esp32.site') {
+            return 'wss://pvrv3.maxapi.esp32.site';
         }
-        return LIVE_WS_URL;
+        if ((window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && window.location.port === '3000') {
+            return 'ws://localhost:3000';
+        }
+        if (activeApiBase === LOCAL_SERVER_URL) {
+            return 'ws://localhost:3000';
+        }
+        return 'wss://pvrv3.maxapi.esp32.site';
     }
 
     async function checkAuthOnLoad() {
@@ -624,8 +666,9 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ token: authToken })
             });
-            const data = await res.json();
-            if (data && data.valid) {
+            let data = {};
+            try { data = await res.json(); } catch(e) {}
+            if (res.ok && data && data.valid) {
                 showDashboard();
                 connect();
             } else {
@@ -634,6 +677,10 @@
                 showLoginScreen();
             }
         } catch (e) {
+            // Server offline or network error; keep on login screen
+            showLoginScreen();
+        }
+    }
             // Server offline or network error; keep on login screen
             showLoginScreen();
         }
@@ -691,7 +738,12 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ password })
             });
-            const data = await res.json();
+            let data = {};
+            try {
+                data = await res.json();
+            } catch (jsonErr) {
+                console.warn('Login response was not JSON:', jsonErr);
+            }
 
             if (res.ok && data.success && data.token) {
                 authToken = data.token;
@@ -709,7 +761,8 @@
                 document.getElementById('loginPasswordInput').select();
             }
         } catch (err) {
-            errorMessage.textContent = 'সার্ভারের সাথে যোগাযোগ করা যাচ্ছে না।';
+            console.error('Login error:', err);
+            errorMessage.textContent = 'সার্ভারের সাথে যোগাযোগ করা যাচ্ছে না। সার্ভার চালু আছে কিনা নিশ্চিত করুন।';
             errorAlert.classList.remove('hidden');
         } finally {
             submitBtn.disabled = false;
