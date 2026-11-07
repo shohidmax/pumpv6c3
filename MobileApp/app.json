@@ -17,6 +17,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "771e12a9-f89b-4b48-9a0f-d3660f29ba37"
+      }
+    },
+    "owner": "shohidmax"
   }
 }
