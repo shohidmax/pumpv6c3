@@ -92,11 +92,92 @@
                     </button>
                 </form>
 
+                <div class="mt-4 text-center">
+                    <button type="button" onclick="openResetPasswordModal()" class="text-xs text-primary hover:underline font-semibold inline-flex items-center gap-1.5 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
+                        পাসওয়ার্ড ভুলে গেছেন? রেজিস্টার্ড নম্বর দিয়ে পরিবর্তন করুন
+                    </button>
+                </div>
+
                 <div class="divider my-4 text-xs opacity-50">MUTHO-SECH SYSTEM</div>
                 <p class="text-center text-xs opacity-60">ডিফল্ট পাসওয়ার্ড: <span class="badge badge-sm badge-ghost font-mono">1234</span></p>
             </div>
         </div>
     </div>
+
+    <!-- ========================================== -->
+    <!-- RESET PASSWORD VIA REGISTERED PHONE MODAL   -->
+    <!-- ========================================== -->
+    <dialog id="resetPasswordModal" class="modal modal-bottom sm:modal-middle">
+        <div class="modal-box bg-base-100 border border-base-300">
+            <h3 class="font-bold text-lg flex items-center gap-2 text-primary">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                </svg>
+                রেজিস্টার্ড নম্বর দিয়ে পাসওয়ার্ড পরিবর্তন
+            </h3>
+            <p class="text-xs text-base-content/70 mt-1">
+                আপনার সিস্টেমের অ্যাডমিন লিস্টে নিবন্ধিত মোবাইল নম্বর দিন। সত্যতা নিশ্চিত হলে নতুন পাসওয়ার্ড সেট হবে।
+            </p>
+
+            <form id="resetPwdForm" onsubmit="handleResetPasswordByPhone(event)" class="space-y-4 mt-4">
+                <div class="form-control">
+                    <label class="label py-1">
+                        <span class="label-text font-bold text-xs">রেজিস্টার্ড মোবাইল নম্বর</span>
+                    </label>
+                    <input 
+                        type="tel" 
+                        id="resetPhoneInput" 
+                        placeholder="যেমন: 017xxxxxxxx বা +88017xxxxxxxx" 
+                        class="input input-bordered w-full font-mono text-sm focus:input-primary" 
+                        required 
+                    />
+                </div>
+
+                <div class="form-control">
+                    <label class="label py-1">
+                        <span class="label-text font-bold text-xs">নতুন পাসওয়ার্ড (New Password)</span>
+                    </label>
+                    <input 
+                        type="password" 
+                        id="resetNewPwdInput" 
+                        placeholder="কমপক্ষে ৩ অক্ষরের পাসওয়ার্ড..." 
+                        class="input input-bordered w-full font-medium focus:input-primary" 
+                        required 
+                        minlength="3" 
+                    />
+                </div>
+
+                <div class="form-control">
+                    <label class="label py-1">
+                        <span class="label-text font-bold text-xs">নতুন পাসওয়ার্ড নিশ্চিত করুন (Confirm)</span>
+                    </label>
+                    <input 
+                        type="password" 
+                        id="resetConfirmPwdInput" 
+                        placeholder="একই পাসওয়ার্ড পুনরায় লিখুন..." 
+                        class="input input-bordered w-full font-medium focus:input-primary" 
+                        required 
+                        minlength="3" 
+                    />
+                </div>
+
+                <!-- Alert box -->
+                <div id="resetPwdAlert" class="alert text-xs py-2 hidden"></div>
+
+                <div class="modal-action mt-6">
+                    <button type="button" onclick="closeResetPasswordModal()" class="btn btn-ghost btn-sm">বাতিল</button>
+                    <button type="submit" id="resetPwdSubmitBtn" class="btn btn-primary btn-sm gap-2">
+                        <span id="resetPwdBtnText">পাসওয়ার্ড পরিবর্তন করুন</span>
+                        <span id="resetPwdBtnSpinner" class="loading loading-spinner loading-xs hidden"></span>
+                    </button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button type="button" onclick="closeResetPasswordModal()">close</button>
+        </form>
+    </dialog>
 
     <!-- ========================================== -->
     <!-- MOTOR CONTROL DASHBOARD (PROTECTED)       -->
@@ -639,6 +720,84 @@
         document.getElementById('confirmNewPasswordInput').value = '';
         document.getElementById('changePwdAlert').classList.add('hidden');
         change_pwd_modal.showModal();
+    }
+
+    function openResetPasswordModal() {
+        document.getElementById('resetPhoneInput').value = '';
+        document.getElementById('resetNewPwdInput').value = '';
+        document.getElementById('resetConfirmPwdInput').value = '';
+        const alertBox = document.getElementById('resetPwdAlert');
+        alertBox.className = 'alert text-xs py-2 hidden';
+        alertBox.textContent = '';
+        const modal = document.getElementById('resetPasswordModal');
+        if (modal) modal.showModal();
+    }
+
+    function closeResetPasswordModal() {
+        const modal = document.getElementById('resetPasswordModal');
+        if (modal) modal.close();
+    }
+
+    async function handleResetPasswordByPhone(event) {
+        event.preventDefault();
+        const phone = document.getElementById('resetPhoneInput').value.trim();
+        const newPassword = document.getElementById('resetNewPwdInput').value;
+        const confirmPassword = document.getElementById('resetConfirmPwdInput').value;
+        const alertBox = document.getElementById('resetPwdAlert');
+        const submitBtn = document.getElementById('resetPwdSubmitBtn');
+        const btnText = document.getElementById('resetPwdBtnText');
+        const btnSpinner = document.getElementById('resetPwdBtnSpinner');
+
+        if (newPassword !== confirmPassword) {
+            alertBox.className = 'alert alert-error text-xs py-2';
+            alertBox.textContent = 'দুইটি নতুন পাসওয়ার্ড মিলছে না!';
+            alertBox.classList.remove('hidden');
+            return;
+        }
+
+        if (newPassword.length < 3) {
+            alertBox.className = 'alert alert-error text-xs py-2';
+            alertBox.textContent = 'নতুন পাসওয়ার্ড কমপক্ষে ৩ অক্ষরের হতে হবে।';
+            alertBox.classList.remove('hidden');
+            return;
+        }
+
+        submitBtn.disabled = true;
+        btnText.textContent = 'যাচাই হচ্ছে...';
+        btnSpinner.classList.remove('hidden');
+        alertBox.classList.add('hidden');
+
+        try {
+            const res = await fetch('/api/reset-password-by-phone', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone, newPassword })
+            });
+            const data = await res.json();
+
+            if (res.ok && data.success) {
+                alertBox.className = 'alert alert-success text-xs py-2';
+                alertBox.textContent = data.message || 'পাসওয়ার্ড সফলভাবে পরিবর্তন করা হয়েছে!';
+                alertBox.classList.remove('hidden');
+                document.getElementById('loginPasswordInput').value = newPassword;
+                setTimeout(() => {
+                    closeResetPasswordModal();
+                    showToast('পাসওয়ার্ড পরিবর্তিত হয়েছে! এখন লগইন করুন।', 'success');
+                }, 1500);
+            } else {
+                alertBox.className = 'alert alert-error text-xs py-2';
+                alertBox.textContent = data.message || 'পাসওয়ার্ড পরিবর্তন করা যায়নি।';
+                alertBox.classList.remove('hidden');
+            }
+        } catch (err) {
+            alertBox.className = 'alert alert-error text-xs py-2';
+            alertBox.textContent = 'সার্ভারের সাথে যোগাযোগ করা যায়নি।';
+            alertBox.classList.remove('hidden');
+        } finally {
+            submitBtn.disabled = false;
+            btnText.textContent = 'পাসওয়ার্ড পরিবর্তন করুন';
+            btnSpinner.classList.add('hidden');
+        }
     }
 
     async function handleChangePassword(event) {

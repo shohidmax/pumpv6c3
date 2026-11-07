@@ -78,6 +78,14 @@ export default function App() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changePwdLoading, setChangePwdLoading] = useState(false);
 
+  // Reset Password via Registered Phone
+  const [resetModalVisible, setResetModalVisible] = useState(false);
+  const [resetPhone, setResetPhone] = useState('');
+  const [resetNewPwd, setResetNewPwd] = useState('');
+  const [resetConfirmPwd, setResetConfirmPwd] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState('');
+
   // Action Confirmation Modal
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
   const [pendingAction, setPendingAction] = useState(null);
@@ -387,6 +395,51 @@ export default function App() {
     }
   };
 
+  const handleResetPasswordByPhone = async () => {
+    if (!resetPhone.trim() || !resetNewPwd.trim() || !resetConfirmPwd.trim()) {
+      Alert.alert('ভুল', 'সবগুলো ফিল্ড পূরণ করুন');
+      return;
+    }
+    if (resetNewPwd !== resetConfirmPwd) {
+      Alert.alert('ভুল', 'নতুন পাসওয়ার্ড দুটি মিলছে না!');
+      return;
+    }
+    if (resetNewPwd.length < 3) {
+      Alert.alert('ভুল', 'নতুন পাসওয়ার্ড কমপক্ষে ৩ অক্ষরের হতে হবে');
+      return;
+    }
+
+    setResetLoading(true);
+    setResetError('');
+    try {
+      const res = await fetch(`${serverUrl}/api/reset-password-by-phone`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: resetPhone.trim(),
+          newPassword: resetNewPwd.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        Alert.alert('সফল', data.message || 'পাসওয়ার্ড সফলভাবে পরিবর্তন হয়েছে!');
+        setResetModalVisible(false);
+        setLoginPassword(resetNewPwd.trim());
+        setResetPhone('');
+        setResetNewPwd('');
+        setResetConfirmPwd('');
+      } else {
+        setResetError(data.message || 'পাসওয়ার্ড পরিবর্তন করা যায়নি!');
+        Alert.alert('ব্যর্থ', data.message || 'পাসওয়ার্ড পরিবর্তন করা যায়নি!');
+      }
+    } catch (e) {
+      setResetError('সার্ভারের সাথে যোগাযোগ করা যাচ্ছে না।');
+      Alert.alert('ত্রুটি', 'সার্ভারের সাথে যোগাযোগ করা যাচ্ছে না।');
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   // 4. Motor Actions with Confirmation
   const confirmAction = (command, title, message) => {
     setPendingAction({ command, title, message });
@@ -523,6 +576,19 @@ export default function App() {
               )}
             </TouchableOpacity>
 
+            {/* Forgot Password via Registered Phone */}
+            <TouchableOpacity
+              style={styles.forgotPwdBtn}
+              onPress={() => {
+                setResetError('');
+                setResetModalVisible(true);
+              }}
+            >
+              <Text style={styles.forgotPwdBtnText}>
+                🔑 পাসওয়ার্ড ভুলে গেছেন? রেজিস্টার্ড নম্বর দিয়ে রিসেট করুন
+              </Text>
+            </TouchableOpacity>
+
             <View style={styles.defaultPwdNote}>
               <Text style={styles.defaultPwdText}>ডিফল্ট পাসওয়ার্ড: 1234</Text>
             </View>
@@ -557,6 +623,78 @@ export default function App() {
             </View>
           )}
         </ScrollView>
+
+        {/* Reset Password Modal */}
+        <Modal
+          visible={resetModalVisible}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setResetModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.confirmModalBox}>
+              <Text style={styles.confirmModalTitle}>📱 পাসওয়ার্ড রিসেট</Text>
+              <Text style={styles.confirmModalMessage}>
+                আপনার সিস্টেমে নিবন্ধিত মোবাইল নম্বর দিন। সত্যতা নিশ্চিত হলে নতুন পাসওয়ার্ড কার্যকর হবে।
+              </Text>
+
+              <TextInput
+                style={styles.modalInput}
+                placeholder="রেজিস্টার্ড নম্বর (যেমন 017xxxxxxxx)"
+                placeholderTextColor="#64748b"
+                value={resetPhone}
+                onChangeText={setResetPhone}
+                keyboardType="phone-pad"
+              />
+
+              <TextInput
+                style={styles.modalInput}
+                placeholder="নতুন পাসওয়ার্ড (কমপক্ষে ৩ অক্ষর)"
+                placeholderTextColor="#64748b"
+                value={resetNewPwd}
+                onChangeText={setResetNewPwd}
+                secureTextEntry
+              />
+
+              <TextInput
+                style={styles.modalInput}
+                placeholder="নতুন পাসওয়ার্ড নিশ্চিত করুন"
+                placeholderTextColor="#64748b"
+                value={resetConfirmPwd}
+                onChangeText={setResetConfirmPwd}
+                secureTextEntry
+              />
+
+              {resetError ? (
+                <Text style={[styles.errorText, { marginBottom: 12 }]}>
+                  ⚠️ {resetError}
+                </Text>
+              ) : null}
+
+              <View style={styles.confirmModalBtnRow}>
+                <TouchableOpacity
+                  style={[styles.confirmBtn, styles.btnCancel]}
+                  onPress={() => setResetModalVisible(false)}
+                  disabled={resetLoading}
+                >
+                  <Text style={styles.confirmBtnText}>বাতিল</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.confirmBtn, styles.btnConfirm]}
+                  onPress={handleResetPasswordByPhone}
+                  disabled={resetLoading}
+                >
+                  {resetLoading ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.confirmBtnText}>রিসেট করুন</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     );
   }
@@ -1192,6 +1330,17 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '800',
+  },
+  forgotPwdBtn: {
+    marginTop: 14,
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  forgotPwdBtnText: {
+    color: '#0284c7',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   defaultPwdNote: {
     marginTop: 16,

@@ -78,34 +78,40 @@ SystemSettings.findOne().then(doc => {
 // --- Password Database (file.db) ---
 const FILE_DB_PATH = path.join(__dirname, 'file.db');
 
-function getPasswordFromFileDb() {
+function readDbFile() {
     try {
         if (!fs.existsSync(FILE_DB_PATH)) {
-            const initialData = { password: "1234", updatedAt: new Date().toISOString() };
+            const initialData = { password: "1234", adminPhones: [], updatedAt: new Date().toISOString() };
             fs.writeFileSync(FILE_DB_PATH, JSON.stringify(initialData, null, 2), 'utf8');
             console.log('[AUTH] file.db initialized with default password: 1234');
-            return "1234";
+            return initialData;
         }
         const raw = fs.readFileSync(FILE_DB_PATH, 'utf8').trim();
         try {
             const parsed = JSON.parse(raw);
-            if (parsed && typeof parsed.password === 'string') {
-                return parsed.password;
+            if (parsed && typeof parsed === 'object') {
+                return parsed;
             }
         } catch (e) {
-            // Plain text password in file.db
-            if (raw.length > 0) return raw;
+            if (raw.length > 0) return { password: raw, adminPhones: [] };
         }
     } catch (err) {
         console.error('[AUTH] Error reading file.db:', err);
     }
-    return "1234";
+    return { password: "1234", adminPhones: [] };
+}
+
+function getPasswordFromFileDb() {
+    const data = readDbFile();
+    return data.password || "1234";
 }
 
 function savePasswordToFileDb(newPassword) {
     try {
-        const data = { password: String(newPassword).trim(), updatedAt: new Date().toISOString() };
-        fs.writeFileSync(FILE_DB_PATH, JSON.stringify(data, null, 2), 'utf8');
+        const currentData = readDbFile();
+        currentData.password = String(newPassword).trim();
+        currentData.updatedAt = new Date().toISOString();
+        fs.writeFileSync(FILE_DB_PATH, JSON.stringify(currentData, null, 2), 'utf8');
         console.log('[AUTH] Password saved to file.db');
         return true;
     } catch (err) {
@@ -114,8 +120,49 @@ function savePasswordToFileDb(newPassword) {
     }
 }
 
+function savePhonesToFileDb(phones) {
+    try {
+        const currentData = readDbFile();
+        currentData.adminPhones = Array.isArray(phones) ? phones : [];
+        currentData.updatedAt = new Date().toISOString();
+        fs.writeFileSync(FILE_DB_PATH, JSON.stringify(currentData, null, 2), 'utf8');
+        console.log('[AUTH] adminPhones saved to file.db:', currentData.adminPhones);
+        return true;
+    } catch (err) {
+        console.error('[AUTH] Error saving adminPhones to file.db:', err);
+        return false;
+    }
+}
+
+// Load initial adminPhones from file.db if present
+const initialDbData = readDbFile();
+if (Array.isArray(initialDbData.adminPhones) && initialDbData.adminPhones.length > 0) {
+    globalAdminPhones = initialDbData.adminPhones;
+    console.log('[AUTH] Loaded adminPhones from file.db:', globalAdminPhones);
+}
+
 // Active login session tokens
 const activeSessions = new Set();
+
+// --- Registered Phone Verification Helpers ---
+function normalizePhoneNumber(phone) {
+    if (!phone) return '';
+    return String(phone).replace(/\D/g, ''); // strip non-digit characters
+}
+
+function isRegisteredPhone(inputPhone) {
+    const cleanInput = normalizePhoneNumber(inputPhone);
+    if (cleanInput.length < 10) return false;
+    const inputSuffix = cleanInput.slice(-10);
+
+    return globalAdminPhones.some(registeredPhone => {
+        const cleanReg = normalizePhoneNumber(registeredPhone);
+        if (cleanReg.length >= 10) {
+            return cleanReg.slice(-10) === inputSuffix;
+        }
+        return cleanReg === cleanInput;
+    });
+}
 
 // --- Auth REST Endpoints ---
 app.post('/api/login', (req, res) => {
@@ -161,6 +208,39 @@ app.post('/api/change-password', (req, res) => {
         return res.json({ success: true, message: 'পাসওয়ার্ড সফলভাবে file.db-তে পরিবর্তন করা হয়েছে!' });
     }
     return res.status(500).json({ success: false, message: 'পাসওয়ার্ড সেভ করা যায়নি।' });
+});
+
+app.post('/api/reset-password-by-phone', (req, res) => {
+    const { phone, newPassword } = req.body || {};
+    if (!phone || !isRegisteredPhone(phone)) {
+        return res.status(403).json({
+            success: false,
+            message: 'এই ফোন নম্বরটি নিবন্ধিত নয়! শুধুমাত্র সিস্টেমে নিবন্ধিত (Admin) মোবাইল নম্বর দিয়ে পাসওয়ার্ড পরিবর্তন করা যাবে।'
+        });
+    }
+    if (!newPassword || String(newPassword).trim().length < 3) {
+        return res.status(400).json({
+            success: false,
+            message: 'নতুন পাসওয়ার্ড কমপক্ষে ৩ অক্ষরের হতে হবে।'
+        });
+    }
+    const cleanPass = String(newPassword).trim();
+    if (savePasswordToFileDb(cleanPass)) {
+        console.log(`[AUTH] Password successfully reset by registered phone: ${phone}`);
+        // Notify ESP32 SIM800L to send SMS confirmation to the user
+        if (esp32Client && esp32Client.readyState === WebSocket.OPEN) {
+            esp32Client.send(JSON.stringify({
+                command: 'PASSWORD_CHANGED_SMS',
+                phone: String(phone).trim(),
+                newPassword: cleanPass
+            }));
+        }
+        return res.json({
+            success: true,
+            message: 'পাসওয়ার্ড সফলভাবে পরিবর্তন করা হয়েছে! এখন নতুন পাসওয়ার্ড দিয়ে লগইন করুন।'
+        });
+    }
+    return res.status(500).json({ success: false, message: 'পাসওয়ার্ড সংরক্ষণ করা সম্ভব হয়নি।' });
 });
 
 // --- Static Files & Dashboard Resolution ---
@@ -423,6 +503,7 @@ wss.on('connection', (ws) => {
                 if (phoneToAdd.length >= 10 && globalAdminPhones.length < 5) {
                     if (!globalAdminPhones.includes(phoneToAdd)) {
                         globalAdminPhones.push(phoneToAdd);
+                        savePhonesToFileDb(globalAdminPhones);
                         SystemSettings.findOneAndUpdate({}, { adminPhones: globalAdminPhones }, { upsert: true }).catch(console.error);
                         console.log("Admin phone added. Current list:", globalAdminPhones);
                         
@@ -440,6 +521,7 @@ wss.on('connection', (ws) => {
                 const phoneToRemove = String(data.value || "").trim();
                 const initialLen = globalAdminPhones.length;
                 globalAdminPhones = globalAdminPhones.filter(p => p !== phoneToRemove);
+                    savePhonesToFileDb(globalAdminPhones);
                 if (globalAdminPhones.length !== initialLen) {
                     SystemSettings.findOneAndUpdate({}, { adminPhones: globalAdminPhones }, { upsert: true }).catch(console.error);
                     console.log("Admin phone removed. Current list:", globalAdminPhones);
@@ -456,6 +538,7 @@ wss.on('connection', (ws) => {
             } else if (data.command === 'SET_PHONES') {
                 if (Array.isArray(data.value)) {
                     globalAdminPhones = data.value.slice(0, 5).map(p => String(p).trim()).filter(p => p.length >= 10);
+                    savePhonesToFileDb(globalAdminPhones);
                     SystemSettings.findOneAndUpdate({}, { adminPhones: globalAdminPhones }, { upsert: true }).catch(console.error);
                     if (esp32Client && esp32Client.readyState === WebSocket.OPEN) {
                         esp32Client.send(JSON.stringify({ command: 'SET_PHONES', value: globalAdminPhones }));
@@ -465,6 +548,15 @@ wss.on('connection', (ws) => {
                             c.send(JSON.stringify({ type: 'phoneListUpdate', payload: globalAdminPhones }));
                         }
                     });
+                }
+            } else if (data.command === 'SET_PASSWORD_FROM_SMS') {
+                const senderPhone = data.phone;
+                const newPass = String(data.value || "").trim();
+                if (isRegisteredPhone(senderPhone) && newPass.length >= 3) {
+                    savePasswordToFileDb(newPass);
+                    console.log(`[AUTH] Password successfully updated from SMS by registered phone: ${senderPhone}`);
+                } else {
+                    console.log(`[AUTH] Rejected SMS password update from unauthorized number: ${senderPhone}`);
                 }
             } else {
                  // Forward other commands (RELAY, RESET, RESTART) to ESP32
@@ -477,6 +569,7 @@ wss.on('connection', (ws) => {
         } else if ((data.type === 'phoneListUpdate' || data.type === 'phoneUpdate') && ws === esp32Client) {
             if (Array.isArray(data.phones || data.payload)) {
                 globalAdminPhones = (data.phones || data.payload).slice(0, 5);
+                savePhonesToFileDb(globalAdminPhones);
             } else if (data.phone) {
                 if (!globalAdminPhones.includes(data.phone) && globalAdminPhones.length < 5) {
                     globalAdminPhones.push(data.phone);

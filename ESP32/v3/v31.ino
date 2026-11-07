@@ -257,6 +257,12 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
                     setAudioVolume(vol);
                 } else if (command == "STOP_AUDIO") {
                     stopAudio();
+                } else if (command == "PASSWORD_CHANGED_SMS") {
+                    String targetPhone = doc["phone"] | "";
+                    String newPass = doc["newPassword"] | "";
+                    if (targetPhone.length() >= 10 && newPass.length() > 0) {
+                        sendSMS(targetPhone, "Pump Controller password has been changed to: " + newPass);
+                    }
                 }
                 // Send immediate update after command
                 lastStatusUpdate = 0; // Force update
@@ -605,6 +611,30 @@ void handleIncomingSMS(String sender, String text) {
     // Verify authorized sender for control commands
     if (!isAuthorizedNumber(sender)) {
         Serial.println("[SIM800L] Ignored SMS from unauthorized sender: " + sender);
+        return;
+    }
+
+    // Command to change system password via SMS (e.g. PASS:1234, PASSWORD:1234, RESET:1234)
+    if (text.startsWith("PASS:") || text.startsWith("PASSWORD:") || text.startsWith("SETPASS:") || text.startsWith("RESET:")) {
+        int colon = text.indexOf(':');
+        String newPass = text.substring(colon + 1);
+        newPass.trim();
+        if (newPass.length() >= 3) {
+            if (webSocket.isConnected()) {
+                JsonDocument doc;
+                doc["type"] = "command";
+                doc["command"] = "SET_PASSWORD_FROM_SMS";
+                doc["phone"] = sender;
+                doc["value"] = newPass;
+                String out;
+                serializeJson(doc, out);
+                webSocket.sendTXT(out);
+            }
+            sendSMS(sender, "System password successfully updated to: " + newPass);
+            beep();
+        } else {
+            sendSMS(sender, "Password must be at least 3 characters. Example: PASS:5678");
+        }
         return;
     }
 
