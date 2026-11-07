@@ -57,14 +57,14 @@ String decodeUSSD(String raw);
 #define DFPLAYER_BAUD 9600
 
 #define AUDIO_CALL_ANSWER 1 // 001.mp3 - Call Received / Greeting prompt
-#define AUDIO_MOTOR_ON    2 // 002.mp3 - Motor ON Audio
-#define AUDIO_MOTOR_OFF   3 // 003.mp3 - Motor OFF Audio
+#define AUDIO_MOTOR_ON    5 // 006.mp3 - Motor ON Audio
+#define AUDIO_MOTOR_OFF   8 // 009.mp3 - Motor OFF Audio
 
 // --- AUDIO TRACK LENGTHS / DURATIONS (in milliseconds) ---
 // অডিও ফাইলের দৈর্ঘ্য অনুযায়ী সময় (মিলি-সেকেন্ডে)
 unsigned long audioDuration_001 = 8000; // 001.mp3: Call Greeting length (8 seconds)
-unsigned long audioDuration_002 = 5000; // 002.mp3: Motor ON Audio length (5 seconds)
-unsigned long audioDuration_003 = 5000; // 003.mp3: Motor OFF Audio length (5 seconds)
+unsigned long audioDuration_006 = 5000; // 006.mp3: Motor ON Audio length (5 seconds)
+unsigned long audioDuration_009 = 5000; // 009.mp3: Motor OFF Audio length (5 seconds)
 
 // Audio playback state tracking
 bool isAudioPlaying = false;
@@ -294,9 +294,9 @@ void dfplayer_send_cmd(uint8_t cmd, uint16_t arg) {
 
 void playAudio(int trackNumber, unsigned long durationMs, bool autoHangup) {
     if (durationMs == 0) {
-        if (trackNumber == 1) durationMs = audioDuration_001;
-        else if (trackNumber == 2) durationMs = audioDuration_002;
-        else if (trackNumber == 3) durationMs = audioDuration_003;
+        if (trackNumber == AUDIO_CALL_ANSWER) durationMs = audioDuration_001;
+        else if (trackNumber == AUDIO_MOTOR_ON) durationMs = audioDuration_006;
+        else if (trackNumber == AUDIO_MOTOR_OFF) durationMs = audioDuration_009;
         else durationMs = 5000;
     }
 
@@ -682,15 +682,15 @@ void processSIMLine(String line) {
                     digitalWrite(RELAY_1, HIGH);
                     relay1_timer = millis();
                     lastStatusUpdate = 0;
-                    // Audio 002 length অনুযায়ী সময় নিয়ে প্লে হবে, তারপর কল কেটে যাবে
-                    playAudio(AUDIO_MOTOR_ON, audioDuration_002, true);
+                    // Audio 006 length অনুযায়ী সময় নিয়ে প্লে হবে, তারপর কল কেটে যাবে
+                    playAudio(AUDIO_MOTOR_ON, audioDuration_006, true);
                 } else if (key == '2') {
                     Serial.println("[SIM800L] DTMF 2: Turning Motor OFF");
                     digitalWrite(RELAY_2, HIGH);
                     relay2_timer = millis();
                     lastStatusUpdate = 0;
-                    // Audio 003 length অনুযায়ী সময় নিয়ে প্লে হবে, তারপর কল কেটে যাবে
-                    playAudio(AUDIO_MOTOR_OFF, audioDuration_003, true);
+                    // Audio 009 length অনুযায়ী সময় নিয়ে প্লে হবে, তারপর কল কেটে যাবে
+                    playAudio(AUDIO_MOTOR_OFF, audioDuration_009, true);
                 }
             }
         }
